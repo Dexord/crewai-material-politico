@@ -1,0 +1,79 @@
+perfis:
+  - id: nao-votou-anulou
+    nome: "Quem não votou ou anulou o voto"
+    dores:
+      - "Descrença na política tradicional"
+      - "Sensação de que nenhum candidato representa"
+    valores:
+      - "Autenticidade"
+      - "Repúdio à corrupção e à incoerência"
+    canais: [facebook, tiktok]
+    gatilhos:
+      - "Incoerência entre discurso e prática"
+      - "Privilégio e distância da realidade"
+    objeções:
+      - "Já desistiu de votar"
+      - "Cético sobre qualquer mensagem política"
+
+  - id: jovens-18-30
+    nome: "Jovens de 18 a 30 anos"
+    dores:
+      - "Desemprego e precarização do trabalho"
+      - "Falta de perspectiva de futuro"
+    valores:
+      - "Justiça social"
+      - "Clareza e informalidade na comunicação"
+    canais: [tiktok, facebook]
+    gatilhos:
+      - "Falas e ações que afetam diretamente sua geração"
+      - "Ironia e memes com base factual"
+    objeções:
+      - "Alta desconfiança de conteúdo político"
+      - "Curta capacidade de atenção"
+
+  - id: classe-media-urbana
+    nome: "Classe média urbana (Sudeste)"
+    dores:
+      - "Inflação e custo de vida"
+      - "Insegurança urbana"
+    valores:
+      - "Responsabilidade fiscal"
+      - "Credibilidade e fontes confiáveis"
+    canais: [facebook]
+    gatilhos:
+      - "Contradição entre discurso e votos no legislativo"
+      - "Impacto econômico das decisões"
+    objeções:
+      - "Exige dados e fontes antes de compartilhar"
+
+  - id: aposentados
+    nome: "Aposentados (60+)"
+    dores:
+      - "Medo de perder direitos e benefícios"
+      - "Desvalorização de aposentadorias e pensões"
+    valores:
+      - "Proteção social"
+      - "Respeito e clareza"
+    canais: [facebook]
+    gatilhos:
+      - "Votações ou projetos que afetam aposentadorias"
+      - "Declarações que desvalorizam idosos"
+    objeções:
+      - "Consumo majoritário em TV e WhatsApp"
+      - "Prefere mensagens simples e diretas"
+
+  - id: campo-agro
+    nome: "Trabalhadores do campo e agronegócio"
+    dores:
+      - "Condições de trabalho no campo"
+      - "Disputa por terra, subsídios e política agrícola"
+    valores:
+      - "Trabalho e produção"
+      - "Defesa de interesses do setor"
+    canais: [facebook, tiktok]
+    gatilhos:
+      - "Posições e votos sobre reforma agrária e política agrícola"
+      - "Divergência entre discurso pró-agro e ações concretas"
+    objeções:
+      - "Forte identificação ideológica prévia"
+      - "Exige fatos muito bem documentados"

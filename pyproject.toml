@@ -1,0 +1,20 @@
+[project]
+name = "crewai-material-politico"
+version = "0.1.0"
+description = "Sistema multi-agente local para gerar manchetes políticas ancoradas em fatos (F0)"
+requires-python = ">=3.11"
+dependencies = [
+    "crewai>=0.86",
+    "requests>=2.32",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.2",
+    "markdownify>=0.13",
+    "duckduckgo-search>=6.3",
+    "feedparser>=6.0",
+    "pyyaml>=6.0",
+    "pydantic-settings>=2.4",
+    "python-dotenv>=1.0",
+]
+
+[tool.uv]
+package = false

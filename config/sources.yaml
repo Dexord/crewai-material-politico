@@ -1,0 +1,26 @@
+# Fontes do agente pesquisador.
+# Edite livremente: adicione/remova feeds RSS e portais que voce escolher.
+# O agente le este arquivo em tempo de execucao (nao precisa reiniciar nada).
+
+search:
+  enabled: true
+  region: "br-pt"
+  max_results: 8
+
+# Feeds RSS. Coloque "ativo: false" para desligar sem remover.
+rss:
+  - nome: "Agencia Brasil"
+    url: "https://agenciabrasil.ebc.com.br/rss/ultimasnoticias/feed.xml"
+    ativo: true
+  - nome: "Senado Noticias"
+    url: "https://www12.senado.leg.br/noticias/rss"
+    ativo: true
+  - nome: "G1"
+    url: "https://g1.globo.com/rss/g1/"
+    ativo: true
+
+# Portais/blogs para scraping direto de pagina (requests + BeautifulSoup).
+portais:
+  - nome: "Exemplo de blog"
+    url: "https://exemplo.com"
+    ativo: false
