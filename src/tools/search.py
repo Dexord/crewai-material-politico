@@ -24,6 +24,13 @@ def search_web(query: str, max_results: int = 8) -> str:
     if not results:
         return "Nenhum resultado encontrado."
 
+    try:
+        from ..vault.log import log_event
+
+        log_event(f"buscar_na_web: '{query}' -> {len(results)} resultados", "pesquisa")
+    except Exception:  # noqa: BLE001
+        pass
+
     lines = ["## Resultados da busca\n"]
     for r in results:
         title = r.get("title") or "Sem título"

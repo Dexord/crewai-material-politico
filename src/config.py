@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     ollama_model: str = "qwen3.5:9b"
     output_dir: str = "data/output"
     scrape_rate_limit: float = 1.5
+    vault_dir: str = "data/vault"
+    max_depth: int = 2
 
 
 @lru_cache

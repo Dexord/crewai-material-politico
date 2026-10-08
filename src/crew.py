@@ -1,10 +1,18 @@
 from crewai import Agent, Crew, LLM, Process, Task
 
 from .config import Settings
+from .output.postagem import Pacote
 from .profiles import profiles_as_markdown
 from .tools.scraper import extract_markdown
 from .tools.search import search_web
 from .tools.sources import list_sources, read_active_rss, read_rss
+from .tools.vault_tools import (
+    buscar_notas,
+    consultar_grafo,
+    ler_nota,
+    salvar_fato,
+    salvar_noticia,
+)
 
 TOM_ENQUADRAMENTO = (
     "## TOM E ENQUADRAMENTO (obrigatorio)\n"
@@ -38,7 +46,7 @@ TOM_ENQUADRAMENTO = (
 )
 
 
-def build_crew(settings: Settings) -> Crew:
+def build_crew(settings: Settings, plataformas: list[str] | None = None) -> Crew:
     llm_preciso = LLM(
         model=f"ollama/{settings.ollama_model}",
         base_url=settings.ollama_base_url,
@@ -59,17 +67,30 @@ def build_crew(settings: Settings) -> Crew:
         role="Pesquisador Politico",
         goal=(
             "Levantar fatos concretos e verificaveis sobre acoes, votos, projetos, "
-            "declaracoes e promessas de Flavio Bolsonaro, priorizando as fontes "
-            "configuradas (RSS e portais). Toda afirmacao deve ter uma URL de origem. "
-            "De prioridade a numeros, datas, votacoes e contradicoes entre discurso e pratica."
+            "declaracoes e promessas de Flavio Bolsonaro, reaproveitando o que ja existe "
+            "no vault e persistindo o que encontrar de novo (com fonte). Toda afirmacao "
+            "deve ter uma URL de origem. De prioridade a numeros, datas, votacoes e "
+            "contradicoes entre discurso e pratica."
         ),
         backstory=(
-            "Voce e um pesquisador rigoroso e cetico. Nao inventa informacao: registra "
-            "apenas o que encontra nas fontes, citando o link de cada alegacao. Voce sabe "
-            "que o material mais util e o fato incomodo: um projeto parado, uma promessa "
-            "nao cumprida, um numero que expoe a contradicao."
+            "Voce e um pesquisador rigoroso e cetico. Antes de pesquisar, voce consulta o "
+            "vault pelo tema (buscar_notas/ler_nota/consultar_grafo) para nao refazer "
+            "trabalho. Nao inventa informacao: registra apenas o que encontra nas fontes, "
+            "citando o link de cada alegacao, e salva o que for novo via salvar_fato/"
+            "salvar_noticia. Voce sabe que o material mais util e o fato incomodo."
         ),
-        tools=[list_sources, read_active_rss, read_rss, search_web, extract_markdown],
+        tools=[
+            list_sources,
+            read_active_rss,
+            read_rss,
+            search_web,
+            extract_markdown,
+            buscar_notas,
+            ler_nota,
+            consultar_grafo,
+            salvar_fato,
+            salvar_noticia,
+        ],
         llm=llm_preciso,
         verbose=True,
         allow_delegation=False,
@@ -87,6 +108,7 @@ def build_crew(settings: Settings) -> Crew:
             "de 0 a 10 por perfil e sugere o ANGULO NARRATIVO mais forte (a contradicao ou "
             "consequencia que fala direto com aquele perfil)."
         ),
+        tools=[buscar_notas, consultar_grafo],
         llm=llm_analista,
         verbose=True,
         allow_delegation=False,
@@ -123,7 +145,7 @@ def build_crew(settings: Settings) -> Crew:
             "deixa passar nada sem lastro. Mas voce tambem sabe que um texto neutro nao "
             "serve: se a manchete virou 'ele defende X', voce reescreve para a consequencia."
         ),
-        tools=[search_web, extract_markdown],
+        tools=[search_web, extract_markdown, ler_nota, buscar_notas],
         llm=llm_preciso,
         verbose=True,
         allow_delegation=False,
@@ -133,22 +155,24 @@ def build_crew(settings: Settings) -> Crew:
         description=(
             "Pesquise o tema: {tema}.\n\n"
             "Passos:\n"
-            "1. Use listar_fontes para ver as fontes configuradas e ler_rss_ativos para "
-            "ler os feeds RSS ativos (quando fizer sentido para o tema).\n"
-            "2. Use buscar_na_web para complementar com materia de portais.\n"
+            "1. Consulte PRIMEIRO o vault pelo tema: use buscar_notas e ler_nota para ver "
+            "o que ja foi pesquisado (reaproveite e nao refaca trabalho). Use "
+            "consultar_grafo se quiser ver entidades ja ligadas ao tema.\n"
+            "2. Use listar_fontes/ler_rss_ativos para ler os feeds e buscar_na_web para "
+            "complementar com materia de portais.\n"
             "3. Use extrair_markdown para baixar e converter as paginas mais relevantes.\n"
-            "4. Produza um dossie em markdown com fatos numerados. Cada fato deve ter: "
-            "afirmacao, contexto e source_url. Registre falhas de acesso em vez de inventar.\n"
-            "5. Priorize fatos com NUMERO, DATA, VOTACAO ou CONTRADICAO entre discurso e "
+            "4. PERSISTA no vault o que for novo: salvar_fato para cada fato (com fonte) e "
+            "salvar_noticia para materias relevantes, informando as entidades.\n"
+            "5. Produza um dossie em markdown com fatos numerados (afirmacao, contexto e "
+            "source_url). Registre falhas de acesso em vez de inventar.\n"
+            "6. Priorize fatos com NUMERO, DATA, VOTACAO ou CONTRADICAO entre discurso e "
             "pratica. Ausencia de informacao NAO e fato: se o tema tiver poucos resultados, "
-            "tente termos alternativos (siglas, anos, numeros de projeto) em vez de concluir "
-            "que 'nao ha registro'."
+            "tente termos alternativos (siglas, anos, numeros de projeto)."
         ),
         agent=pesquisador,
         expected_output=(
             "Dossie em markdown com fatos numerados, cada um com afirmacao, contexto e "
-            "source_url. Priorizou fatos concretos (numeros/votacoes/contradicoes). "
-            "Nenhuma afirmacao sem fonte."
+            "source_url. Fatos/materias novos foram salvos no vault. Nenhuma afirmacao sem fonte."
         ),
     )
 
@@ -157,6 +181,9 @@ def build_crew(settings: Settings) -> Crew:
             "Com base no dossie do pesquisador, avalie cada pauta/fato para os perfis "
             "abaixo, atribuindo nota de impacto de 0 a 10 por perfil (logica de persuasao "
             "e mudanca de voto) e uma justificativa curta.\n\n"
+            "Antes de pontuar, voce PODE consultar o vault (buscar_notas) e o grafo "
+            "(consultar_grafo) para medir quantas pessoas/relacoes a pauta toca — pauta "
+            "com mais conexoes documentadas tende a ter mais alcance.\n\n"
             f"{profiles_as_markdown()}\n\n"
             "Para cada pauta, aponte tambem o ANGULO NARRATIVO mais forte: qual contradicao "
             "ou consequencia concreta fala direto com o perfil-alvo.\n\n"
@@ -197,8 +224,9 @@ def build_crew(settings: Settings) -> Crew:
 
     tarefa_revisao = Task(
         description=(
-            "Revise o material do roteirista comparando cada afirmacao com o dossie e, se "
-            "necessario, com as fontes (buscar_na_web / extrair_markdown).\n\n"
+            "Revise o material do roteirista comparando cada afirmacao com o dossie e com "
+            "as notas do vault (ler_nota/buscar_notas); se necessario, confirme na web "
+            "(buscar_na_web / extrair_markdown).\n\n"
             "Regras de fato:\n"
             "- Se uma afirmacao nao tiver fonte que a sustente, remova ou reescreva para "
             "algo sustentado.\n"
@@ -217,20 +245,77 @@ def build_crew(settings: Settings) -> Crew:
             "- Se nao houver fato suficiente para um enquadramento forte, substitua a pauta "
             "por outra do dossie ou varie o angulo sobre os fatos mais fortes.\n\n"
             "Entregue a versao final PRIMEIRO (as 5 manchetes com roteiro e fonte), e so "
-            "depois, como apendice, a tabela de validacao (afirmacao -> fonte -> status)."
+            "depois, como apendice, a tabela de validacao com as colunas: Afirmacao | "
+            "Referencia (id da nota no vault e/ou source_url) | Status."
         ),
         agent=revisor,
         expected_output=(
             "Versao final com 5 manchetes fortes (enquadramento de oposicao) e roteiros, "
-            "cada uma com source_url; apendice com tabela de validacao. Terminar com: "
+            "cada uma com source_url; apendice com tabela de validacao (Afirmacao | "
+            "Referencia | Status). Terminar com: "
             "'Conteudo gerado por IA - verificar antes de publicar.'"
         ),
         context=[tarefa_pesquisa, tarefa_roteiro],
     )
 
+    agents = [pesquisador, analista, roteirista, revisor]
+    tasks = [tarefa_pesquisa, tarefa_analise, tarefa_roteiro, tarefa_revisao]
+
+    if plataformas:
+        redator = Agent(
+            role="Redator de Plataforma",
+            goal=(
+                "Adaptar cada manchete aprovada para o formato de cada plataforma "
+                "(Facebook/TikTok), pronto para publicar."
+            ),
+            backstory=(
+                "Voce e redator de redes sociais de campanha de oposicao. Adapta o material "
+                "aprovado para Facebook e TikTok sem mudar o fato nem o enquadramento. Para "
+                "TikTok, voce escreve o titulo, o texto da publicacao e o texto da arte "
+                "(titulo + subtitulo) no padrao de midia profissional."
+            ),
+            llm=llm_criativo,
+            verbose=True,
+            allow_delegation=False,
+        )
+
+        instrucoes = []
+        if "facebook" in plataformas:
+            instrucoes.append(
+                "FACEBOOK: preencha 'texto_publicacao' (legenda com gancho, 2 a 4 linhas, "
+                "CTA e link) e 'hashtags' (3 a 5)."
+            )
+        if "tiktok" in plataformas:
+            instrucoes.append(
+                "TIKTOK: preencha 'titulo' (curto, ate 8 palavras, exibido no video), "
+                "'texto_publicacao' (legenda), 'texto_tela' (uma linha por cena) e o texto "
+                "da IMAGEM que sera usada: 'imagem_titulo' (ate 6 palavras, de impacto) e "
+                "'imagem_subtitulo' (uma linha curta que contextualiza) — padrao de midia "
+                "profissional, titulo + subtitulo, sem excesso de texto na arte."
+            )
+
+        tarefa_pacote = Task(
+            description=(
+                "A partir da versao final aprovada pelo revisor, gere as pecas de publicacao "
+                f"para as plataformas: {', '.join(plataformas)}.\n\n"
+                "Para CADA manchete aprovada, gere UMA peca por plataforma, preenchendo todos "
+                "os campos do schema.\n\n"
+                "Instrucoes por plataforma:\n" + "\n".join(instrucoes) + "\n\n"
+                f"{TOM_ENQUADRAMENTO}\n"
+                "Nao mude fatos, numeros nem fontes. Preencha 'source_url' com a fonte da "
+                "manchete e 'disclosure' com o aviso de conteudo gerado por IA."
+            ),
+            agent=redator,
+            expected_output="Pacote com as pecas por plataforma, no schema definido.",
+            output_pydantic=Pacote,
+            context=[tarefa_revisao],
+        )
+        agents.append(redator)
+        tasks.append(tarefa_pacote)
+
     return Crew(
-        agents=[pesquisador, analista, roteirista, revisor],
-        tasks=[tarefa_pesquisa, tarefa_analise, tarefa_roteiro, tarefa_revisao],
+        agents=agents,
+        tasks=tasks,
         process=Process.sequential,
         verbose=True,
     )

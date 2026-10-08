@@ -12,6 +12,7 @@ dependencies = [
     "duckduckgo-search>=6.3",
     "feedparser>=6.0",
     "pyyaml>=6.0",
+    "networkx>=3.3",
     "pydantic-settings>=2.4",
     "python-dotenv>=1.0",
 ]

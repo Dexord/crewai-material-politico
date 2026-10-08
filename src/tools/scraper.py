@@ -74,4 +74,12 @@ def extract_markdown(url: str, max_chars: int = 6000) -> str:
         body_md = body_md[:max_chars] + "..."
 
     header = f"# {title}\n\nFonte: {url}\n\n" if title else f"Fonte: {url}\n\n"
+
+    try:
+        from ..vault.log import log_event
+
+        log_event(f"extrair_markdown: {url}", "scraping")
+    except Exception:  # noqa: BLE001
+        pass
+
     return header + body_md

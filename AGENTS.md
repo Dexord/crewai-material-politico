@@ -24,16 +24,31 @@ ausência.
 | Config | `pydantic-settings` (`.env`) |
 | Gerenciador | `uv` (Python 3.13) |
 
-Planejado para fases futuras: `chromadb` + embeddings Ollama (RAG), SQLite (persistência).
+Grafo de conhecimento: `networkx` (em memória). Persistência do conteúdo: notas Markdown
+no vault (Obsidian). **Sem** SQLite/RAG por decisão do projeto (mais auditável, escala
+pequena) — ver seção F2b.
 
 ## 3. Comandos
 
 ```powershell
 uv sync                                          # instalar/atualizar deps
-uv run python -m src.main run --tema "<tema>"    # rodar o pipeline completo
+
+# Fluxo de conteudo (pipeline sequencial de 4 agentes)
+uv run python -m src.main run --tema "<tema>"
+
+# Grafo de conhecimento (F2a)
+uv run python -m src.main investigar             # estrutura o vault + mantem a fila
+uv run python -m src.main pesquisar --limite N   # consome a fila (0 = esvazia); rode a noite
+
+# Export por plataforma + fila de postagem (F3, export-only)
+uv run python -m src.main run --tema "<tema>" --plataformas facebook,tiktok
+uv run python -m src.main agenda [--status rascunho]   # lista a fila de postagem
+uv run python -m src.main aprovar <id>                 # rascunho -> aprovado
+uv run python -m src.main publicar <id>                # aprovado -> publicado
 ```
 
-Saída: arquivo markdown timestampado em `data/output/` (gitignored).
+Saída do `run`: markdown timestampado em `data/output/` (gitignored).
+Vault (grafo): `data/vault/` (gitignored) — abra como vault no Obsidian.
 
 Checagem rápida do provider / VRAM:
 ```powershell
@@ -47,16 +62,28 @@ config/
   sources.yaml      # fontes do pesquisador (RSS + portais) — EDITE AQUI para adicionar blogs
   profiles.yaml     # 5 perfis demográficos (dores, valores, canais, gatilhos, objeções)
 src/
-  config.py         # Settings (lê .env): ollama_base_url, ollama_model, output_dir, scrape_rate_limit
-  crew.py           # monta os 4 agentes + 4 tasks. REGRAS DE TOM vivem aqui (TOM_ENQUADRAMENTO)
+  config.py         # Settings (lê .env): ollama_base_url, ollama_model, output_dir,
+                    # scrape_rate_limit, vault_dir, max_depth
+  crew.py           # pipeline de conteudo: 4 agentes + 4 tasks (TOM_ENQUADRAMENTO)
+  crew_pesquisador.py  # pesquisa um alvo e persiste fato/entidade no vault (consome a fila)
+  crew_investigador.py # estrutura o vault e mantem a fila (NAO pesquisa na web)
   profiles.py       # carrega profiles.yaml e injeta no analista
-  main.py           # CLI (reconfigura stdout/stderr p/ utf-8 no Windows)
+  main.py           # CLI: run / investigar / pesquisar / agenda / aprovar / publicar
   output/render.py  # salva saída em data/output/
+  output/postagem.py # schema Peca/Pacote (pydantic), fila de postagem (JSON) e .txt por plataforma
+  vault/
+    vault.py        # ler/escrever notas c/ frontmatter (PyYAML), id/slug, escrita atômica
+    log.py          # append no log/<data>.md
+    queue.py        # fila de pesquisa (status, prioridade, profundidade, dedupe)
+    index.py        # grafo em memória (networkx): vizinhos, caminho, mais conectados
   tools/
-    search.py       # buscar_na_web (DuckDuckGo -> markdown)
-    scraper.py      # extrair_markdown (requests+bs4 -> markdown, com rate-limit e headers)
+    search.py       # buscar_na_web (DuckDuckGo -> markdown) + auto-log
+    scraper.py      # extrair_markdown (requests+bs4 -> markdown) + auto-log
     sources.py      # listar_fontes, ler_rss, ler_rss_ativos (config/sources.yaml)
-data/               # saidas e (futuro) indice — gitignored
+    vault_tools.py  # salvar_nota/fato/pessoa, registrar_vinculo, relacionar, fila, grafo
+data/
+  output/           # saidas do run (gitignored)
+  vault/            # grafo de conhecimento, estilo Obsidian (gitignored)
 ```
 
 ## 5. Pipeline (sequencial)
@@ -69,6 +96,56 @@ data/               # saidas e (futuro) indice — gitignored
 
 Temperaturas separadas por agente: precisão `0.1` (pesquisador/revisor), `0.3` (analista),
 criativo `0.7` (roteirista).
+
+### Fluxo do grafo de conhecimento (F2a)
+
+Separação de papéis (modelo pequeno não acumula funções):
+
+- **Pesquisador de Campo** (`crew_pesquisador.py`) — o único que pesquisa na web.
+  Persiste no vault `fato`/`noticia`/`pessoa` e registra `vinculo` (com fonte). Nomes de
+  pessoas/instituições são dados de primeira classe. Enfileira pessoas novas (expansão
+  recursiva com `profundidade+1`, limitada por `MAX_DEPTH`).
+- **Investigador de Relações** (`crew_investigador.py`) — NÃO pesquisa na web. Lê o vault,
+  liga entidades, classifica vínculos e mantém a fila.
+
+Loop noturno: `investigar` (estrutura + fila) → `pesquisar --limite N` (driver determinístico
+consome a fila: pega item pendente de maior prioridade/menor profundidade, roda o pesquisador,
+marca `concluido`). Dedupe automático por `alvo`; itens acima de `MAX_DEPTH` são ignorados.
+
+Vault em `data/vault/` (Obsidian): `log/`, `noticias/`, `fatos/`, `pessoas/`, `organizacoes/`,
+`temas/`, `fila/`. Toda nota tem frontmatter YAML + `[[wikilinks]]` (Graph View do Obsidian).
+
+### Integração do vault ao `run` (F2b)
+
+Sem RAG: o vault é a fonte única da verdade e os agentes leem/escrevem via tools.
+
+- **Pesquisador** consulta o vault antes (`buscar_notas`/`ler_nota`/`consultar_grafo`) e
+  **persiste** o que achar de novo (`salvar_fato`/`salvar_noticia`).
+- **Analista** usa `buscar_notas`/`consultar_grafo` para contextualizar a nota de impacto.
+- **Revisor** valida contra as notas (`ler_nota`/`buscar_notas`); a tabela de validação
+  cita a **referência** (id da nota e/ou `source_url`), sem trecho literal.
+- `buscar_notas` é on-demand e ranqueado por campo (`titulo`/`nome`/`afirmacao` > `tags` >
+  `fonte` > `corpo`), case/accent-insensitive. **Sem embeddings/ChromaDB** por decisão do
+  projeto (mais auditável, escala pequena). Revisitar só se surgir necessidade de busca
+  semântica/paráfrase ou agrupar notícias similares — nesse caso usar `fastembed` (CPU,
+  fora do Ollama, que tem `OLLAMA_MAX_LOADED_MODES=1`).
+
+### Export por plataforma e fila de postagem (F3)
+
+Export-only (sem auto-post). Com `run --plataformas facebook,tiktok`, um **Redator de
+Plataforma** (5º agente, só quando a flag é usada) adapta a versão aprovada pelo revisor e
+emite um `Pacote` (saída estruturada `Peca`/`Pacote` em `src/output/postagem.py`).
+
+- **Facebook**: `texto_publicacao` + `hashtags`.
+- **TikTok**: `titulo`, `texto_publicacao`, `texto_tela` (por cena) e texto da **imagem**
+  (`imagem_titulo` + `imagem_subtitulo`, padrão de mídia profissional) — a imagem é feita
+  à mão pelo usuário.
+- Todas as peças saem com `source_url` e `disclosure` de IA.
+
+Fila local em `data/output/fila-postagem.json` (ciclo `rascunho -> aprovado -> publicado`)
+e arquivos de copiar-e-colar em `data/output/postagens/<id>.txt`. Comandos: `agenda`,
+`aprovar <id>`, `publicar <id>`. **Sem** `.ics`, Task Scheduler ou auto-post (deixados
+como plugáveis no futuro).
 
 ## 6. Regras editoriais (NÃO REMOVER)
 
@@ -98,6 +175,8 @@ OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=qwen3.5:9b
 OUTPUT_DIR=data/output
 SCRAPE_RATE_LIMIT=1.5
+VAULT_DIR=data/vault
+MAX_DEPTH=2
 ```
 
 ## 9. Contexto do modelo (importante)
@@ -135,9 +214,14 @@ rejeitados/ignorados. Portanto o contexto é controlado **do lado do Ollama**:
 
 - **F0 (feito):** pesquisador + busca/scraping → manchetes citadas.
 - **F1 (feito):** 4 agentes, fontes parametrizáveis (RSS/portais), perfis, revisor.
-- **F2:** RAG (ChromaDB + `nomic-embed-text`), análise por perfil com corpus indexado,
-  citação literal do trecho-fonte na tabela de validação.
-- **F3:** export por plataforma, fila/agendamento de postagem.
+- **F2a (feito):** vault estilo Obsidian (notas + wikilinks), log automático, fila de
+  pesquisa com expansão recursiva, agente investigador (estrutura + mantém fila).
+- **F2b (feito):** vault integrado ao `run` (sem RAG): pesquisador lê/persiste, analista
+  consulta o grafo, revisor cita por referência; `buscar_notas` ranqueado por campo.
+- **F3 (feito):** export por plataforma (Facebook/TikTok) via agente redator com saída
+  estruturada, fila de postagem local com ciclo de status. Export-only, sem auto-post.
+- **Futuro:** auto-post via APIs (Meta/TikTok), `.ics`/Task Scheduler; embeddings
+  (`fastembed`) se a busca semântica virar necessidade.
 
 ## 12. Convenções de código
 
