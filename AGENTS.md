@@ -20,7 +20,7 @@ ausência.
 | LLM | Ollama local, modelo `qwen3.5:9b` (Q4_K_M, 9B, nativo 262144 ctx, tools+thinking) |
 | Scraping | `requests` + `BeautifulSoup` + `markdownify` |
 | RSS | `feedparser` + `PyYAML` |
-| Busca | `duckduckgo-search` |
+| Busca | `ddgs` (metasearch; backend `auto`, region `br-pt`) |
 | Config | `pydantic-settings` (`.env`) |
 | Gerenciador | `uv` (Python 3.13) |
 
@@ -38,7 +38,12 @@ uv run python -m src.main run --tema "<tema>"
 
 # Grafo de conhecimento (F2a)
 uv run python -m src.main investigar             # estrutura o vault + mantem a fila
-uv run python -m src.main pesquisar --limite N   # consome a fila (0 = esvazia); rode a noite
+uv run python -m src.main pesquisar --limite N   # consome a fila (0 = esvazia)
+uv run python -m src.main enfileirar "<alvo>" [--motivo "..."] [--prioridade 3]
+
+# Loop autonomo (roda investigar<->pesquisar por N horas, saida ao vivo)
+uv run python -m src.main pesquisar --horas 6 --lote 10
+.\scripts\loop-noite.ps1 -Horas 6               # wrapper: powercfg + aquece + daemon
 
 # Export por plataforma + fila de postagem (F3, export-only)
 uv run python -m src.main run --tema "<tema>" --plataformas facebook,tiktok
@@ -84,6 +89,8 @@ src/
 data/
   output/           # saidas do run (gitignored)
   vault/            # grafo de conhecimento, estilo Obsidian (gitignored)
+scripts/
+  loop-noite.ps1    # wrapper do daemon: powercfg + aquece Ollama + pesquisar --horas
 ```
 
 ## 5. Pipeline (sequencial)
@@ -147,6 +154,23 @@ e arquivos de copiar-e-colar em `data/output/postagens/<id>.txt`. Comandos: `age
 `aprovar <id>`, `publicar <id>`. **Sem** `.ics`, Task Scheduler ou auto-post (deixados
 como plugáveis no futuro).
 
+### Loop autonomo (`pesquisar --horas N`)
+
+O daemon roda no mesmo processo e imprime tudo **ao vivo no terminal** (stdout com
+`line_buffering`), gravando tambem um log resumido em `data/output/loop-<stamp>.log`.
+
+- Ao iniciar, roda `reset_em_andamento()` — itens `em_andamento` órfãos de uma interrupção
+  voltam para `pendente`.
+- Ciclo: fila vazia → roda o investigador; senão → processa um lote (`--lote`, default 10).
+- Encerra ao fim do tempo (`--horas`) ou após 3 ciclos sem novidades (saturação).
+- `BLACKLIST_ALVOS` (`.env`) evita o auto-enfileiramento de alvos como o próprio candidato;
+  `enfileirar` explícito ignora a blacklist.
+- `scripts/loop-noite.ps1 -Horas 6 [-Logar]`: ajusta `powercfg`, aquece o Ollama e chama o
+  daemon; `-Logar` usa Tee para também salvar o transcript do console.
+
+Nota: `--horas` é um orçamento **aproximado** — um item em execução pode passar do prazo até
+terminar (o tempo é checado entre itens/lotes).
+
 ## 6. Regras editoriais (NÃO REMOVER)
 
 Definidas em `TOM_ENQUADRAMENTO` (`src/crew.py`) e replicadas no revisor:
@@ -177,6 +201,7 @@ OUTPUT_DIR=data/output
 SCRAPE_RATE_LIMIT=1.5
 VAULT_DIR=data/vault
 MAX_DEPTH=2
+BLACKLIST_ALVOS=Flavio Bolsonaro
 ```
 
 ## 9. Contexto do modelo (importante)
@@ -204,6 +229,10 @@ rejeitados/ignorados. Portanto o contexto é controlado **do lado do Ollama**:
 
 - **UOL devolve 403** (anti-bot) no scraping por `requests`. Ignorado por decisão do projeto;
   trocar por RSS ou adicionar `httpx[http2]` + warmup de sessão no futuro.
+- **Busca web**: usa `ddgs` no backend `auto`. Os backends individuais (`duckduckgo`,
+  `google`, `bing`, `brave`) costumam devolver `DDGSException: No results found` (bloqueio de
+  IP/rate-limit) — por isso não fixar `backend`. `region="br-pt"` é respeitado no `auto`
+  quando há fonte brasileira; temas muito cobertos no exterior trazem páginas em espanhol.
 - **G1** responde por `requests` puro. **Senado RSS** correto: `https://www12.senado.leg.br/noticias/rss`.
 - **Console Windows**: emojis/acentos causam ruído de `charmap` no crewAI. `src/main.py`
   reconfigura stdout/stderr para utf-8; rode com `$env:PYTHONUTF8=1` se necessário.

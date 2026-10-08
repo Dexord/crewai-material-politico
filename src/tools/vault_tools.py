@@ -285,7 +285,7 @@ def adicionar_fila(
     """
     note_id = fila.add_item(alvo, motivo, prioridade, profundidade, origem)
     if not note_id:
-        return f"Item ja existe na fila (ignorado): {alvo}"
+        return f"Ignorado (ja existe na fila ou alvo na blacklist): {alvo}"
     return f"Adicionado a fila: {alvo} ({note_id})"
 
 

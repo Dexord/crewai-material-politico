@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     scrape_rate_limit: float = 1.5
     vault_dir: str = "data/vault"
     max_depth: int = 2
+    blacklist_alvos: str = "Flavio Bolsonaro"
 
 
 @lru_cache

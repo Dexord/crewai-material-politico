@@ -1,6 +1,7 @@
 from datetime import datetime
 
-from .vault import all_notes, make_id, save_note, update_frontmatter, slugify
+from ..config import get_settings
+from .vault import all_notes, make_id, normalize, save_note, update_frontmatter
 
 
 def _normalize_alvo(alvo: str) -> str:
@@ -8,6 +9,15 @@ def _normalize_alvo(alvo: str) -> str:
     if alvo.startswith("[[") and alvo.endswith("]]"):
         alvo = alvo[2:-2]
     return alvo.strip()
+
+
+def _blacklist() -> set[str]:
+    raw = get_settings().blacklist_alvos or ""
+    return {normalize(x).strip() for x in raw.split(",") if x.strip()}
+
+
+def _blacklisted(alvo: str) -> bool:
+    return normalize(alvo).strip() in _blacklist()
 
 
 def existing_alvos() -> set[str]:
@@ -19,10 +29,17 @@ def existing_alvos() -> set[str]:
 
 
 def add_item(
-    alvo: str, motivo: str = "", prioridade: int = 3, profundidade: int = 0, origem: str = ""
+    alvo: str,
+    motivo: str = "",
+    prioridade: int = 3,
+    profundidade: int = 0,
+    origem: str = "",
+    forcar: bool = False,
 ) -> str | None:
     alvo = _normalize_alvo(alvo)
     if not alvo:
+        return None
+    if not forcar and _blacklisted(alvo):
         return None
     if alvo.lower() in existing_alvos():
         return None
@@ -82,3 +99,12 @@ def mark_status(note_id: str, status: str) -> bool:
 
 def pending_count() -> int:
     return len(list_items("pendente"))
+
+
+def reset_em_andamento() -> int:
+    total = 0
+    for fm, _, _ in all_notes("fila"):
+        if fm.get("status") == "em_andamento":
+            update_frontmatter(fm["id"], status="pendente")
+            total += 1
+    return total

@@ -1,10 +1,13 @@
 import argparse
 import sys
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
 
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
 if sys.stderr and hasattr(sys.stderr, "reconfigure"):
-    sys.stderr.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8", line_buffering=True)
 
 from .config import get_settings
 from .crew import build_crew
@@ -50,9 +53,53 @@ def investigar() -> int:
     return 0
 
 
-def pesquisar(limite: int) -> int:
+def enfileirar(alvo: str, motivo: str = "", prioridade: int = 3) -> int:
+    ensure_vault()
+    note_id = fila.add_item(alvo, motivo, prioridade, 0, "cli", forcar=True)
+    if note_id:
+        print(f"Enfileirado: {alvo} ({note_id})")
+        return 0
+    print(f"Ignorado (ja existe na fila): {alvo}")
+    return 0
+
+
+def _processar_item(item: dict, settings) -> bool:
+    alvo = item.get("alvo")
+    print(f"\n=== Pesquisando: {alvo} ({item['id']}) ===", flush=True)
+    fila.mark_status(item["id"], "em_andamento")
+    log_event(f"pesquisar iniciado: {alvo}", "fila")
+    try:
+        crew = build_pesquisador_crew(settings)
+        result = crew.kickoff(
+            inputs={
+                "alvo": alvo,
+                "motivo": item.get("motivo", ""),
+                "profundidade": item.get("profundidade", 0),
+                "max_depth": settings.max_depth,
+            }
+        )
+        text = getattr(result, "raw", str(result))
+        save_output(text, settings.output_dir, f"pesquisa-{item['id']}")
+        fila.mark_status(item["id"], "concluido")
+        log_event(f"pesquisar concluido: {alvo}", "fila")
+        return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"Erro ao pesquisar {alvo}: {exc}", flush=True)
+        log_event(f"pesquisar erro em {alvo}: {exc}", "fila")
+        fila.mark_status(item["id"], "pendente")
+        return False
+
+
+def pesquisar(limite: int = 0, horas: float = 0.0, lote: int = 10) -> int:
     settings = get_settings()
     ensure_vault()
+
+    orfaos = fila.reset_em_andamento()
+    if orfaos:
+        print(f"Retomando {orfaos} item(ns) orfao(s) (em_andamento -> pendente).")
+
+    if horas and horas > 0:
+        return _daemon(settings, horas, lote)
 
     processados = 0
     while limite == 0 or processados < limite:
@@ -63,34 +110,61 @@ def pesquisar(limite: int) -> int:
         if int(item.get("profundidade", 0)) > settings.max_depth:
             fila.mark_status(item["id"], "ignorado")
             continue
-
-        alvo = item.get("alvo")
-        print(f"\n=== Pesquisando: {alvo} ({item['id']}) ===")
-        fila.mark_status(item["id"], "em_andamento")
-        log_event(f"pesquisar iniciado: {alvo}", "fila")
-
-        try:
-            crew = build_pesquisador_crew(settings)
-            result = crew.kickoff(
-                inputs={
-                    "alvo": alvo,
-                    "motivo": item.get("motivo", ""),
-                    "profundidade": item.get("profundidade", 0),
-                    "max_depth": settings.max_depth,
-                }
-            )
-            text = getattr(result, "raw", str(result))
-            save_output(text, settings.output_dir, f"pesquisa-{item['id']}")
-            fila.mark_status(item["id"], "concluido")
-            log_event(f"pesquisar concluido: {alvo}", "fila")
-        except Exception as exc:  # noqa: BLE001
-            print(f"Erro ao pesquisar {alvo}: {exc}")
-            log_event(f"pesquisar erro em {alvo}: {exc}", "fila")
-            fila.mark_status(item["id"], "pendente")
-
+        _processar_item(item, settings)
         processados += 1
 
     print(f"\nItens processados: {processados}. Pendentes na fila: {fila.pending_count()}.")
+    return 0
+
+
+def _daemon(settings, horas: float, lote: int) -> int:
+    deadline = datetime.now() + timedelta(hours=horas)
+    log_path = Path(settings.output_dir) / f"loop-{datetime.now():%Y%m%d-%H%M%S}.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def log(msg: str) -> None:
+        line = f"[{datetime.now():%H:%M:%S}] {msg}"
+        print(line, flush=True)
+        with log_path.open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+
+    log(f"daemon iniciado por {horas}h (lote={lote}). Fim previsto: {deadline:%H:%M}.")
+    log(f"log em: {log_path}")
+    dry = 0
+    total = 0
+
+    while datetime.now() < deadline:
+        if fila.pending_count() == 0:
+            dry += 1
+            log(f"fila vazia -> rodando investigador (dry={dry})")
+            try:
+                build_investigador_crew(settings).kickoff()
+            except Exception as exc:  # noqa: BLE001
+                log(f"erro no investigador: {exc}")
+            if fila.pending_count() == 0:
+                if dry >= 3:
+                    log("saturado (3 ciclos sem novidades). Encerrando.")
+                    break
+                log("ainda vazio; aguardando 300s.")
+                time.sleep(300)
+                continue
+
+        dry = 0
+        processados_lote = 0
+        while processados_lote < lote and datetime.now() < deadline:
+            item = fila.next_item()
+            if not item:
+                break
+            if int(item.get("profundidade", 0)) > settings.max_depth:
+                fila.mark_status(item["id"], "ignorado")
+                continue
+            _processar_item(item, settings)
+            processados_lote += 1
+            total += 1
+        log(f"lote concluido ({processados_lote} itens; total {total})")
+
+    log(f"daemon encerrado. Itens processados: {total}. Pendentes: {fila.pending_count()}.")
+    print(f"\nLog do loop: {log_path}")
     return 0
 
 
@@ -128,8 +202,15 @@ def main() -> int:
 
     sub.add_parser("investigar", help="Estrutura o vault e mantem a fila de pesquisa")
 
-    p_pesq = sub.add_parser("pesquisar", help="Consome a fila de pesquisa (overnight)")
+    p_pesq = sub.add_parser("pesquisar", help="Consome a fila de pesquisa")
     p_pesq.add_argument("--limite", type=int, default=0, help="Itens a processar (0 = esvaziar)")
+    p_pesq.add_argument("--horas", type=float, default=0.0, help="Roda como daemon por N horas")
+    p_pesq.add_argument("--lote", type=int, default=10, help="Itens por lote no modo --horas")
+
+    p_enq = sub.add_parser("enfileirar", help="Adiciona um alvo a fila de pesquisa")
+    p_enq.add_argument("alvo", help="Pessoa, instituicao ou tema")
+    p_enq.add_argument("--motivo", default="", help="Por que pesquisar")
+    p_enq.add_argument("--prioridade", type=int, default=3, help="1 a 5")
 
     p_ag = sub.add_parser("agenda", help="Lista a fila de postagem")
     p_ag.add_argument("--status", default="", help="rascunho | aprovado | publicado")
@@ -146,7 +227,9 @@ def main() -> int:
     if args.comando == "investigar":
         return investigar()
     if args.comando == "pesquisar":
-        return pesquisar(args.limite)
+        return pesquisar(args.limite, args.horas, args.lote)
+    if args.comando == "enfileirar":
+        return enfileirar(args.alvo, args.motivo, args.prioridade)
     if args.comando == "agenda":
         return agenda(args.status)
     if args.comando == "aprovar":

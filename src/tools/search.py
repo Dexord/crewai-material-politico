@@ -1,10 +1,10 @@
 from crewai.tools import tool
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 
 
 @tool("buscar_na_web")
 def search_web(query: str, max_results: int = 8) -> str:
-    """Busca na web (DuckDuckGo) e retorna os resultados formatados em markdown.
+    """Busca na web (DuckDuckGo metasearch) e retorna os resultados em markdown.
 
     Args:
         query: Texto da busca em português.
@@ -14,10 +14,9 @@ def search_web(query: str, max_results: int = 8) -> str:
         Lista de resultados em markdown com título, link e descrição.
     """
     try:
-        with DDGS() as ddgs:
-            results = list(
-                ddgs.text(query, region="br-pt", safesearch="off", max_results=max_results)
-            )
+        results = DDGS().text(
+            query, region="br-pt", safesearch="off", max_results=max_results
+        )
     except Exception as exc:  # noqa: BLE001
         return f"Erro ao buscar: {exc}"
 
