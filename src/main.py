@@ -16,6 +16,7 @@ from .crew_pesquisador import build_pesquisador_crew
 from .output import postagem
 from .output.render import save_output
 from .vault import queue as fila
+from .vault.entidades import deduplicar, fundir
 from .vault.log import log_event
 from .vault.migrar import migrar
 from .vault.render import atualizar_entidades
@@ -201,6 +202,29 @@ def agenda(status: str = "") -> int:
     return 0
 
 
+def deduplicar_cmd(aplicar: bool = False) -> int:
+    res = deduplicar(aplicar=aplicar)
+    plano = res["plano"]
+    print(f"Clusters encontrados: {len(plano)} (pares: {len(res['pares'])})")
+    for item in plano:
+        tag = "AUTO" if item["auto"] else "revisar"
+        print(f"\n[{tag}] canonico sugerido: {item['canonico']}")
+        for membro in item["membros"]:
+            print(f"    - {membro}")
+    if aplicar:
+        print(f"\nMerges aplicados (auto): {len(res['migrados'])}")
+        for m in res["migrados"]:
+            print(f"    - {m}")
+    else:
+        print("\n(dry-run) Nada alterado. Use --aplicar para fundir os clusters AUTO.")
+    return 0
+
+
+def fundir_cmd(id_a: str, id_b: str) -> int:
+    print(fundir(id_a, id_b))
+    return 0
+
+
 def migrar_organizacoes(aplicar: bool = False, duvidosos: bool = False) -> int:
     res = migrar(aplicar=aplicar, incluir_duvidosos=duvidosos)
     fortes = res["fortes"]
@@ -270,6 +294,13 @@ def main() -> int:
         "render-entidades", help="Renderiza o corpo das entidades (bibliotecario deterministico)"
     )
 
+    p_ded = sub.add_parser("deduplicar", help="Encontra/funde entidades duplicadas")
+    p_ded.add_argument("--aplicar", action="store_true", help="Funde os clusters de alta confianca")
+
+    p_fund = sub.add_parser("fundir", help="Funde duas entidades (b -> a), reescrevendo links")
+    p_fund.add_argument("a", help="Id canonico (destino)")
+    p_fund.add_argument("b", help="Id a fundir (origem)")
+
     args = parser.parse_args()
     if args.comando == "run":
         return run(args.tema, args.plataformas)
@@ -289,6 +320,10 @@ def main() -> int:
         return migrar_organizacoes(args.aplicar, args.duvidosos)
     if args.comando == "render-entidades":
         return render_entidades()
+    if args.comando == "deduplicar":
+        return deduplicar_cmd(args.aplicar)
+    if args.comando == "fundir":
+        return fundir_cmd(args.a, args.b)
     return 1
 
 

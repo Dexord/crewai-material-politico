@@ -2,6 +2,7 @@ from datetime import datetime
 
 from crewai.tools import tool
 
+from ..vault import entidades
 from ..vault import index as graph_index
 from ..vault import queue as fila
 from ..vault.render import registrar_mencao, render_entidade
@@ -33,6 +34,9 @@ def _resolve_id(nome: str, guess_tipo: str = "pessoa") -> str:
         return ""
     if find_note(nome):
         return nome
+    hit = entidades.resolver(nome)
+    if hit:
+        return hit["id"]
     alvo_slug = slugify(nome)
     for fm, _, _ in all_notes():
         note_id = fm.get("id", "")
@@ -40,6 +44,13 @@ def _resolve_id(nome: str, guess_tipo: str = "pessoa") -> str:
         if slugify(nome_nota) == alvo_slug or slugify(note_id) == alvo_slug:
             return note_id
     return make_id(guess_tipo, nome)
+
+
+def _merge_alias(fm: dict, nome: str) -> None:
+    if entidades.canonico(nome) != entidades.canonico(fm.get("nome") or ""):
+        aliases = set(fm.get("aliases") or [])
+        aliases.add(nome)
+        fm["aliases"] = sorted(aliases)
 
 
 @tool("salvar_noticia")
@@ -120,6 +131,18 @@ def salvar_pessoa(nome: str, cargos: str = "") -> str:
     Returns:
         O id da nota da pessoa.
     """
+    hit = entidades.resolver(nome, "pessoa")
+    if hit:
+        note_id = hit["id"]
+        fm, _ = read_note(note_id)
+        fm["tipo"] = "pessoa"
+        fm["cargos"] = sorted(set((fm.get("cargos") or []) + _split(cargos)))
+        fm.setdefault("vinculos", [])
+        fm.setdefault("mencionado_em", [])
+        _merge_alias(fm, nome)
+        save_note(fm, render_entidade(fm))
+        return f"Pessoa salva: {note_id} (reaproveitada)"
+
     note_id = make_id("pessoa", nome)
     existing = read_note(note_id)
     if existing:
@@ -128,12 +151,14 @@ def salvar_pessoa(nome: str, cargos: str = "") -> str:
         fm["cargos"] = sorted(set((fm.get("cargos") or []) + _split(cargos)))
         fm.setdefault("vinculos", [])
         fm.setdefault("mencionado_em", [])
+        _merge_alias(fm, nome)
     else:
         fm = {
             "id": note_id,
             "tipo": "pessoa",
             "nome": nome,
             "cargos": _split(cargos),
+            "aliases": [],
             "vinculos": [],
             "mencionado_em": [],
         }
@@ -157,6 +182,18 @@ def salvar_organizacao(nome: str, tipo_org: str = "") -> str:
     Returns:
         O id da nota da organizacao.
     """
+    hit = entidades.resolver(nome, "organizacao")
+    if hit:
+        note_id = hit["id"]
+        fm, _ = read_note(note_id)
+        fm["tipo"] = "organizacao"
+        fm["tipo_org"] = sorted(set((fm.get("tipo_org") or []) + _split(tipo_org)))
+        fm.setdefault("vinculos", [])
+        fm.setdefault("mencionado_em", [])
+        _merge_alias(fm, nome)
+        save_note(fm, render_entidade(fm))
+        return f"Organizacao salva: {note_id} (reaproveitada)"
+
     note_id = make_id("organizacao", nome)
     existing = read_note(note_id)
     if existing:
@@ -165,12 +202,14 @@ def salvar_organizacao(nome: str, tipo_org: str = "") -> str:
         fm["tipo_org"] = sorted(set((fm.get("tipo_org") or []) + _split(tipo_org)))
         fm.setdefault("vinculos", [])
         fm.setdefault("mencionado_em", [])
+        _merge_alias(fm, nome)
     else:
         fm = {
             "id": note_id,
             "tipo": "organizacao",
             "nome": nome,
             "tipo_org": _split(tipo_org),
+            "aliases": [],
             "vinculos": [],
             "mencionado_em": [],
         }

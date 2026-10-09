@@ -47,6 +47,10 @@ uv run python -m src.main migrar-organizacoes [--aplicar] [--duvidosos]
 # Renderiza o corpo das entidades (roda automatico em run/investigar/pesquisar)
 uv run python -m src.main render-entidades
 
+# Dedupe de entidades (auto-merge conservador na escrita; limpeza do historico e manual)
+uv run python -m src.main deduplicar [--aplicar]   # dry-run lista clusters
+uv run python -m src.main fundir <id_a> <id_b>      # funde b -> a (reescreve links)
+
 # Loop autonomo (roda investigar<->pesquisar por N horas, saida ao vivo)
 uv run python -m src.main pesquisar --horas 6 --lote 10
 .\scripts\loop-noite.ps1 -Horas 6               # wrapper: powercfg + aquece + daemon
@@ -89,6 +93,7 @@ src/
     index.py        # grafo em memória (networkx): vizinhos, caminho, mais conectados
     migrar.py       # reclassifica notas pessoa -> organizacao (dry-run + aplicar)
     render.py       # "bibliotecario" deterministico: corpo das entidades + mencionado_em
+    entidades.py    # resolucao de entidades: score, aliases, fundir/merge, deduplicar
   tools/
     search.py       # buscar_na_web (ddgs -> markdown) + auto-log
     scraper.py      # extrair_markdown (requests+bs4 -> markdown) + auto-log
@@ -162,6 +167,23 @@ escrever (`salvar_pessoa`/`salvar_organizacao`/`registrar_vinculo` renderizam o 
 `salvar_fato`/`salvar_noticia` atualizam o `mencionado_em` das entidades citadas). Comando
 manual `render-entidades` só para reparo. Frontmatter continua sendo a **fonte da verdade**;
 o corpo é derivado e idempotente.
+
+### Resolução de entidades (aliases e dedupe)
+
+`src/vault/entidades.py` resolve se uma pessoa/organização **já existe** antes de criar
+(determinístico, **sem LLM**): normaliza (sem acento/honorífico/partícula, remove apelido
+após vírgula) e compara por token — **igualdade de tokens** (ignora ordem) e subconjunto com
+mesmo primeiro/último.
+
+- **Auto-merge na escrita**: `salvar_pessoa`/`salvar_organizacao` reaproveitam a nota
+  existente quando o match é de **alta confiança** (tokens idênticos) e gravam o nome novo em
+  `aliases`. Subconjunto (nome do meio a menos) fica como **revisar** (nunca automático —
+  ex.: `jair-bolsonaro` × `jair-renan-bolsonaro` são pai e filho).
+- **`aliases`** no frontmatter: novas grafias/apelidos apontam para o canônico
+  (`_resolve_id` consulta).
+- **Histórico**: `deduplicar` (dry-run) lista clusters (AUTO/revisar); `fundir a b` faz o
+  merge manual — junta `cargos`/`vinculos`/`mencionado_em`, adiciona alias, **reescreve os
+  `[[id_b]]`→`[[id_a]]`** no vault e apaga a nota B. Confirmação manual por decisão.
 
 ### Export por plataforma e fila de postagem (F3)
 
@@ -266,7 +288,8 @@ rejeitados/ignorados. Portanto o contexto é controlado **do lado do Ollama**:
   voltar a argumento de ausência — as regras da seção 6 existem para barrar isso.
 - **Entidades (pessoa x organização)**: `migrar-organizacoes` move notas para
   `organizacoes/` mantendo o **mesmo `id`** (ex.: `pessoa-banco-master`) para não quebrar
-  os `[[wikilinks]]`. Pendente: **dedupe/alias** (nomes e apelidos duplicados).
+  os `[[wikilinks]]`. Dedupe via `entidades.py` (`deduplicar`/`fundir`); subconjunto de
+  nome só mescla sob confirmação (nunca automático).
 
 ## 11. Roadmap
 
