@@ -12,6 +12,7 @@ from .tools.vault_tools import (
     relacionar,
     salvar_fato,
     salvar_noticia,
+    salvar_organizacao,
     salvar_pessoa,
 )
 
@@ -44,6 +45,7 @@ def build_pesquisador_crew(settings: Settings) -> Crew:
             salvar_noticia,
             salvar_fato,
             salvar_pessoa,
+            salvar_organizacao,
             registrar_vinculo,
             relacionar,
             adicionar_fila,
@@ -66,7 +68,9 @@ def build_pesquisador_crew(settings: Settings) -> Crew:
             "2. Use extrair_markdown para ler as paginas mais relevantes.\n"
             "3. salvar_fato para cada fato (com fonte) e salvar_noticia para materias relevantes.\n"
             "4. Nomes de PESSOAS e INSTITUICOES sao prioritarios:\n"
-            "   - salvar_pessoa para cada pessoa citada;\n"
+            "   - salvar_pessoa para cada PESSOA FISICA citada;\n"
+            "   - salvar_organizacao para cada INSTITUICAO citada (empresa, banco, "
+            "partido, orgao publico, tribunal, delegacia, associacao, faccao etc.);\n"
             "   - registrar_vinculo (SEMPRE com fonte) para cada relacao "
             "(assessor, socio, aliado, parente, condenado, reu, investigado, etc.);\n"
             "   - inclua as entidades no campo 'entidades' de salvar_fato/salvar_noticia.\n"

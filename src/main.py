@@ -17,6 +17,8 @@ from .output import postagem
 from .output.render import save_output
 from .vault import queue as fila
 from .vault.log import log_event
+from .vault.migrar import migrar
+from .vault.render import atualizar_entidades
 from .vault.vault import ensure_vault
 
 
@@ -38,6 +40,8 @@ def run(tema: str, plataformas: str = "") -> int:
             print("Arquivos de copiar-e-colar em: data/output/postagens/")
         else:
             print("\nAviso: saída estruturada de peças indisponível.")
+
+    _render_entidades()
     return 0
 
 
@@ -50,6 +54,20 @@ def investigar() -> int:
     print(text)
     path = save_output(text, settings.output_dir, "investigacao")
     print(f"\nResumo salvo em: {path}")
+    _render_entidades()
+    return 0
+
+
+def _render_entidades() -> None:
+    res = atualizar_entidades()
+    print(
+        f"[bibliotecario] {res['entidades']} entidades renderizadas; "
+        f"{res['mencionado_atualizado']} com 'mencionado_em' atualizado."
+    )
+
+
+def render_entidades() -> int:
+    _render_entidades()
     return 0
 
 
@@ -82,6 +100,7 @@ def _processar_item(item: dict, settings) -> bool:
         save_output(text, settings.output_dir, f"pesquisa-{item['id']}")
         fila.mark_status(item["id"], "concluido")
         log_event(f"pesquisar concluido: {alvo}", "fila")
+        _render_entidades()
         return True
     except Exception as exc:  # noqa: BLE001
         print(f"Erro ao pesquisar {alvo}: {exc}", flush=True)
@@ -182,6 +201,26 @@ def agenda(status: str = "") -> int:
     return 0
 
 
+def migrar_organizacoes(aplicar: bool = False, duvidosos: bool = False) -> int:
+    res = migrar(aplicar=aplicar, incluir_duvidosos=duvidosos)
+    fortes = res["fortes"]
+    duv = res["duvidosos"]
+    print(f"Fortes: {len(fortes)} | Duvidosos: {len(duv)}")
+    print("\n-- FORTES (migram com --aplicar) --")
+    for it in fortes:
+        print(f"  {it['nome']}  ({it['id']})  [{it['motivo']}]")
+    print("\n-- DUVIDOSOS (inclua com --duvidosos) --")
+    for it in duv:
+        print(f"  {it['nome']}  ({it['id']})  [{it['motivo']}]")
+    if res["aplicado"]:
+        print(f"\nMigrados: {len(res['migrados'])}")
+        for e in res["erros"]:
+            print(f"  ERRO {e[0]}: {e[1]}")
+    else:
+        print("\n(dry-run) Nada foi alterado. Use --aplicar para migrar.")
+    return 0
+
+
 def marcar_status(peca_id: str, status: str) -> int:
     if postagem.set_status(peca_id, status):
         print(f"{peca_id} -> {status}")
@@ -221,6 +260,16 @@ def main() -> int:
     p_pub = sub.add_parser("publicar", help="Marca peca como publicada")
     p_pub.add_argument("id", help="Id da peca")
 
+    p_mig = sub.add_parser(
+        "migrar-organizacoes", help="Reclassifica pessoas->organizacoes (dry-run por padrao)"
+    )
+    p_mig.add_argument("--aplicar", action="store_true", help="Aplica de fato a migracao")
+    p_mig.add_argument("--duvidosos", action="store_true", help="Inclui correspondencias ambiguas")
+
+    sub.add_parser(
+        "render-entidades", help="Renderiza o corpo das entidades (bibliotecario deterministico)"
+    )
+
     args = parser.parse_args()
     if args.comando == "run":
         return run(args.tema, args.plataformas)
@@ -236,6 +285,10 @@ def main() -> int:
         return marcar_status(args.id, "aprovado")
     if args.comando == "publicar":
         return marcar_status(args.id, "publicado")
+    if args.comando == "migrar-organizacoes":
+        return migrar_organizacoes(args.aplicar, args.duvidosos)
+    if args.comando == "render-entidades":
+        return render_entidades()
     return 1
 
 

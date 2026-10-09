@@ -41,6 +41,12 @@ uv run python -m src.main investigar             # estrutura o vault + mantem a 
 uv run python -m src.main pesquisar --limite N   # consome a fila (0 = esvazia)
 uv run python -m src.main enfileirar "<alvo>" [--motivo "..."] [--prioridade 3]
 
+# Migracao de entidades (pessoa -> organizacao); dry-run por padrao
+uv run python -m src.main migrar-organizacoes [--aplicar] [--duvidosos]
+
+# Renderiza o corpo das entidades (roda automatico em run/investigar/pesquisar)
+uv run python -m src.main render-entidades
+
 # Loop autonomo (roda investigar<->pesquisar por N horas, saida ao vivo)
 uv run python -m src.main pesquisar --horas 6 --lote 10
 .\scripts\loop-noite.ps1 -Horas 6               # wrapper: powercfg + aquece + daemon
@@ -81,11 +87,13 @@ src/
     log.py          # append no log/<data>.md
     queue.py        # fila de pesquisa (status, prioridade, profundidade, dedupe)
     index.py        # grafo em memória (networkx): vizinhos, caminho, mais conectados
+    migrar.py       # reclassifica notas pessoa -> organizacao (dry-run + aplicar)
+    render.py       # "bibliotecario" deterministico: corpo das entidades + mencionado_em
   tools/
-    search.py       # buscar_na_web (DuckDuckGo -> markdown) + auto-log
+    search.py       # buscar_na_web (ddgs -> markdown) + auto-log
     scraper.py      # extrair_markdown (requests+bs4 -> markdown) + auto-log
     sources.py      # listar_fontes, ler_rss, ler_rss_ativos (config/sources.yaml)
-    vault_tools.py  # salvar_nota/fato/pessoa, registrar_vinculo, relacionar, fila, grafo
+    vault_tools.py  # salvar_fato/noticia/pessoa/organizacao, registrar_vinculo, relacionar, fila, grafo
 data/
   output/           # saidas do run (gitignored)
   vault/            # grafo de conhecimento, estilo Obsidian (gitignored)
@@ -109,9 +117,10 @@ criativo `0.7` (roteirista).
 Separação de papéis (modelo pequeno não acumula funções):
 
 - **Pesquisador de Campo** (`crew_pesquisador.py`) — o único que pesquisa na web.
-  Persiste no vault `fato`/`noticia`/`pessoa` e registra `vinculo` (com fonte). Nomes de
-  pessoas/instituições são dados de primeira classe. Enfileira pessoas novas (expansão
-  recursiva com `profundidade+1`, limitada por `MAX_DEPTH`).
+  Persiste no vault `fato`/`noticia`/`pessoa`/`organizacao` e registra `vinculo` (com fonte).
+  Nomes de pessoas/instituições são dados de primeira classe (`salvar_pessoa` para pessoa
+  física, `salvar_organizacao` para empresa/banco/partido/órgão/facção etc.). Enfileira
+  pessoas novas (expansão recursiva com `profundidade+1`, limitada por `MAX_DEPTH`).
 - **Investigador de Relações** (`crew_investigador.py`) — NÃO pesquisa na web. Lê o vault,
   liga entidades, classifica vínculos e mantém a fila.
 
@@ -136,6 +145,23 @@ Sem RAG: o vault é a fonte única da verdade e os agentes leem/escrevem via too
   projeto (mais auditável, escala pequena). Revisitar só se surgir necessidade de busca
   semântica/paráfrase ou agrupar notícias similares — nesse caso usar `fastembed` (CPU,
   fora do Ollama, que tem `OLLAMA_MAX_LOADED_MODES=1`).
+
+### Bibliotecário determinístico (corpo das entidades)
+
+Notas de `pessoa`/`organizacao` são **stubs**: cargos, vínculos e "mencionado em" ficam no
+frontmatter. Para ficarem legíveis no Obsidian, `src/vault/render.py` gera o **corpo** a
+partir do frontmatter (determinístico, **sem LLM**):
+
+- `render_entidade(fm)` — monta o markdown (Cargos/Tipo, `## Vínculos` com fonte, `## Mencionado em`).
+- `backfill_mencionado_em()` — preenche `mencionado_em` a partir dos links de entrada
+  (`entidades`/`vinculos`/wikilinks dos fatos e notícias).
+- `atualizar_entidades()` — backfill + re-render de todas as entidades.
+
+**Automático** ao fim de `run`, `investigar` e de cada item de `pesquisar`; também ao
+escrever (`salvar_pessoa`/`salvar_organizacao`/`registrar_vinculo` renderizam o corpo;
+`salvar_fato`/`salvar_noticia` atualizam o `mencionado_em` das entidades citadas). Comando
+manual `render-entidades` só para reparo. Frontmatter continua sendo a **fonte da verdade**;
+o corpo é derivado e idempotente.
 
 ### Export por plataforma e fila de postagem (F3)
 
@@ -238,6 +264,9 @@ rejeitados/ignorados. Portanto o contexto é controlado **do lado do Ollama**:
   reconfigura stdout/stderr para utf-8; rode com `$env:PYTHONUTF8=1` se necessário.
 - **Espaço em branco/fonte única**: quando o tema tem pouca cobertura, o modelo tende a
   voltar a argumento de ausência — as regras da seção 6 existem para barrar isso.
+- **Entidades (pessoa x organização)**: `migrar-organizacoes` move notas para
+  `organizacoes/` mantendo o **mesmo `id`** (ex.: `pessoa-banco-master`) para não quebrar
+  os `[[wikilinks]]`. Pendente: **dedupe/alias** (nomes e apelidos duplicados).
 
 ## 11. Roadmap
 

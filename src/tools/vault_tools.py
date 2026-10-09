@@ -4,6 +4,7 @@ from crewai.tools import tool
 
 from ..vault import index as graph_index
 from ..vault import queue as fila
+from ..vault.render import registrar_mencao, render_entidade
 from ..vault.vault import (
     all_notes,
     find_note,
@@ -59,6 +60,7 @@ def salvar_noticia(
         O id da nota salva no vault.
     """
     note_id = make_id("noticia", titulo, dated=True)
+    entity_ids = [_resolve_id(e) for e in _split(entidades)]
     fm = {
         "id": note_id,
         "tipo": "noticia",
@@ -67,10 +69,11 @@ def salvar_noticia(
         "fonte": fonte,
         "source_url": source_url,
         "tags": _split(tags),
-        "entidades": [_link(_resolve_id(e)) for e in _split(entidades)],
+        "entidades": [_link(e) for e in entity_ids],
         "relacionadas": [],
     }
     save_note(fm, conteudo)
+    registrar_mencao(entity_ids, note_id)
     return f"Noticia salva: {note_id}"
 
 
@@ -90,6 +93,7 @@ def salvar_fato(
         O id da nota de fato.
     """
     note_id = make_id("fato", afirmacao, dated=True)
+    entity_ids = [_resolve_id(e) for e in _split(entidades)]
     fm = {
         "id": note_id,
         "tipo": "fato",
@@ -97,10 +101,11 @@ def salvar_fato(
         "fonte": fonte,
         "source_url": source_url,
         "data": f"{datetime.now():%Y-%m-%d}",
-        "entidades": [_link(_resolve_id(e)) for e in _split(entidades)],
+        "entidades": [_link(e) for e in entity_ids],
         "relacionadas": [],
     }
     save_note(fm, afirmacao)
+    registrar_mencao(entity_ids, note_id)
     return f"Fato salvo: {note_id}"
 
 
@@ -118,11 +123,11 @@ def salvar_pessoa(nome: str, cargos: str = "") -> str:
     note_id = make_id("pessoa", nome)
     existing = read_note(note_id)
     if existing:
-        fm, body = existing
+        fm, _ = existing
+        fm["tipo"] = "pessoa"
         fm["cargos"] = sorted(set((fm.get("cargos") or []) + _split(cargos)))
         fm.setdefault("vinculos", [])
         fm.setdefault("mencionado_em", [])
-        save_note(fm, body)
     else:
         fm = {
             "id": note_id,
@@ -132,8 +137,45 @@ def salvar_pessoa(nome: str, cargos: str = "") -> str:
             "vinculos": [],
             "mencionado_em": [],
         }
-        save_note(fm, f"# {nome}\n")
+    save_note(fm, render_entidade(fm))
     return f"Pessoa salva: {note_id}"
+
+
+@tool("salvar_organizacao")
+def salvar_organizacao(nome: str, tipo_org: str = "") -> str:
+    """Cria/atualiza a nota de uma ORGANIZACAO no vault.
+
+    Use para instituicoes: empresas, bancos, partidos, orgaos publicos, tribunais,
+    delegacias, associacoes, fundacoes, faccoes/organizacoes criminosas, etc.
+    Para pessoas fisicas, use salvar_pessoa.
+
+    Args:
+        nome: Nome da organizacao.
+        tipo_org: Categoria(s) separadas por virgula (ex: empresa, banco, partido,
+            orgao publico, faccao, associacao).
+
+    Returns:
+        O id da nota da organizacao.
+    """
+    note_id = make_id("organizacao", nome)
+    existing = read_note(note_id)
+    if existing:
+        fm, _ = existing
+        fm["tipo"] = "organizacao"
+        fm["tipo_org"] = sorted(set((fm.get("tipo_org") or []) + _split(tipo_org)))
+        fm.setdefault("vinculos", [])
+        fm.setdefault("mencionado_em", [])
+    else:
+        fm = {
+            "id": note_id,
+            "tipo": "organizacao",
+            "nome": nome,
+            "tipo_org": _split(tipo_org),
+            "vinculos": [],
+            "mencionado_em": [],
+        }
+    save_note(fm, render_entidade(fm))
+    return f"Organizacao salva: {note_id}"
 
 
 @tool("registrar_vinculo")
@@ -160,13 +202,13 @@ def registrar_vinculo(pessoa: str, tipo: str, alvo: str, fonte: str) -> str:
         salvar_pessoa.run(nome=pessoa)
     alvo_id = _resolve_id(alvo, guess_tipo="pessoa")
 
-    fm, body = read_note(pessoa_id)
+    fm, _ = read_note(pessoa_id)
     vinculos = fm.get("vinculos") or []
     entry = {"tipo": tipo, "alvo": _link(alvo_id), "fonte": fonte}
     if entry not in vinculos:
         vinculos.append(entry)
     fm["vinculos"] = vinculos
-    save_note(fm, body)
+    save_note(fm, render_entidade(fm))
     return f"Vinculo registrado: {pessoa_id} --{tipo}--> {alvo_id}"
 
 
@@ -194,14 +236,12 @@ def relacionar(origem: str, destino: str, tipo_relacao: str = "", fonte: str = "
             continue
         fm, body = found
         relacionadas = fm.get("relacionadas") or []
-        if b not in relacionadas:
-            relacionadas.append(b)
+        link = _link(b)
+        if link not in relacionadas:
+            relacionadas.append(link)
         fm["relacionadas"] = relacionadas
-        marker = f"[[{b}]]"
-        if marker not in body:
-            label = f" ({tipo_relacao})" if tipo_relacao else ""
-            extra = f" - fonte: {fonte}" if fonte else ""
-            body = f"{body.rstrip()}\n\n## Relacoes\n- {marker}{label}{extra}"
+        if fm.get("tipo") in ("pessoa", "organizacao"):
+            body = render_entidade(fm)
         save_note(fm, body)
     return f"Relacionado: {origem_id} <-> {destino_id}"
 

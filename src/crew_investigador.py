@@ -9,6 +9,7 @@ from .tools.vault_tools import (
     ler_nota,
     registrar_vinculo,
     relacionar,
+    salvar_organizacao,
     salvar_pessoa,
 )
 
@@ -36,6 +37,7 @@ def build_investigador_crew(settings: Settings) -> Crew:
             ler_nota,
             buscar_notas,
             salvar_pessoa,
+            salvar_organizacao,
             registrar_vinculo,
             relacionar,
             consultar_grafo,
@@ -52,12 +54,14 @@ def build_investigador_crew(settings: Settings) -> Crew:
             "Estruture o vault e mantenha a fila de pesquisa. NAO pesquise na web.\n\n"
             "Passos:\n"
             "1. Revise as notas recentes com buscar_notas e ler_nota (noticias, fatos).\n"
-            "2. Para cada pessoa/instituicao citada: salvar_pessoa e registrar_vinculo "
-            "(SEMPRE com fonte) para ligar as pessoas entre si e ao candidato/tema.\n"
+            "2. Para cada entidade citada: salvar_pessoa para PESSOA FISICA e "
+            "salvar_organizacao para INSTITUICAO (empresa, banco, partido, orgao publico, "
+            "tribunal, delegacia, associacao, faccao etc.); e registrar_vinculo "
+            "(SEMPRE com fonte) para ligar as entidades entre si e ao candidato/tema.\n"
             "   - Registre apenas vinculos DOCUMENTADOS. Nunca infira.\n"
             "   - Status juridico (condenado, reu, investigado) so com fonte.\n"
             "3. Use relacionar para conectar noticias entre si (mesmo tema, contradicao, "
-            "mesma pessoa) e noticias com pessoas.\n"
+            "mesma pessoa) e noticias com entidades.\n"
             "4. Atualize a fila: adicionar_fila para pessoas/temas relevantes que ainda "
             "nao foram pesquisados (com motivo e prioridade).\n"
             "5. Use consultar_grafo e consultar_fila para identificar lacunas do grafo."
