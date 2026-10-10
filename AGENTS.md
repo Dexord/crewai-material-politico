@@ -41,6 +41,9 @@ uv run python -m src.main investigar             # estrutura o vault + mantem a 
 uv run python -m src.main pesquisar --limite N   # consome a fila (0 = esvazia)
 uv run python -m src.main enfileirar "<alvo>" [--motivo "..."] [--prioridade 3]
 
+# Limpeza da fila de pesquisa (dry-run por padrao): itens ja pesquisados/duplicados
+uv run python -m src.main fila-limpar [--aplicar]
+
 # Migracao de entidades (pessoa -> organizacao); dry-run por padrao
 uv run python -m src.main migrar-organizacoes [--aplicar] [--duvidosos]
 
@@ -132,6 +135,17 @@ Separação de papéis (modelo pequeno não acumula funções):
 Loop noturno: `investigar` (estrutura + fila) → `pesquisar --limite N` (driver determinístico
 consome a fila: pega item pendente de maior prioridade/menor profundidade, roda o pesquisador,
 marca `concluido`). Dedupe automático por `alvo`; itens acima de `MAX_DEPTH` são ignorados.
+
+Dedupe da fila: `queue.add_item` usa chave canônica (`entidades.chave`, sem acento/honorífico/
+partícula/sufixo/parentese) e **pula alvos já cobertos por uma entidade existente no vault**
+(`entidades.coberto`, prefixo de tokens). `fila-limpar` marca como `ignorado` os pendentes já
+pesquisados, já concluídos ou duplicados (dry-run + `--aplicar`).
+
+Prioridade (1–5, default 3): definida pelo investigador (`adicionar_fila`). Rubrica: quanto
+maior a chance de escândalo sério / possível crime (legislação brasileira) envolvendo a
+família Bolsonaro, maior a prioridade (5 = crime grave/lesão ao erário ligado à família;
+4 = pessoa/empresa central com fonte forte; 3 = relevante; 2 = contexto; 1 = tangencial).
+`next_item` ordena por prioridade desc → profundidade asc → mais antigo.
 
 Vault em `data/vault/` (Obsidian): `log/`, `noticias/`, `fatos/`, `pessoas/`, `organizacoes/`,
 `temas/`, `fila/`. Toda nota tem frontmatter YAML + `[[wikilinks]]` (Graph View do Obsidian).

@@ -1,7 +1,11 @@
+import re
 from datetime import datetime
 
 from ..config import get_settings
-from .vault import all_notes, make_id, normalize, save_note, update_frontmatter
+from . import entidades
+from .vault import all_notes, make_id, normalize, read_note, save_note, update_frontmatter
+
+ID_RE = re.compile(r"^(pessoa|org|organizacao|noticia|fato|tema)-")
 
 
 def _normalize_alvo(alvo: str) -> str:
@@ -9,6 +13,15 @@ def _normalize_alvo(alvo: str) -> str:
     if alvo.startswith("[[") and alvo.endswith("]]"):
         alvo = alvo[2:-2]
     return alvo.strip()
+
+
+def _chave(alvo: str) -> str:
+    a = _normalize_alvo(alvo)
+    if ID_RE.match(a):
+        found = read_note(a)
+        if found:
+            a = found[0].get("nome") or found[0].get("titulo") or a
+    return entidades.chave(a)
 
 
 def _blacklist() -> set[str]:
@@ -22,7 +35,7 @@ def _blacklisted(alvo: str) -> bool:
 
 def existing_alvos() -> set[str]:
     return {
-        _normalize_alvo(fm.get("alvo", "")).lower()
+        _chave(fm.get("alvo", ""))
         for fm, _, _ in all_notes("fila")
         if fm.get("alvo")
     }
@@ -39,10 +52,16 @@ def add_item(
     alvo = _normalize_alvo(alvo)
     if not alvo:
         return None
-    if not forcar and _blacklisted(alvo):
+    chave = _chave(alvo)
+    if not chave:
         return None
-    if alvo.lower() in existing_alvos():
-        return None
+    if not forcar:
+        if _blacklisted(alvo):
+            return None
+        if chave in existing_alvos():
+            return None
+        if entidades.coberto(alvo):
+            return None
 
     try:
         prioridade = int(prioridade)
@@ -108,3 +127,34 @@ def reset_em_andamento() -> int:
             update_frontmatter(fm["id"], status="pendente")
             total += 1
     return total
+
+
+def limpar(aplicar: bool = False) -> dict:
+    itens = list_items()
+    refs_ent = entidades.chaves_entidades()
+    concluidos = {_chave(i["alvo"]) for i in itens if i.get("status") == "concluido"}
+    vistos: dict[str, str] = {}
+    plano: list[dict] = []
+    for item in sorted(itens, key=lambda x: x.get("criado_em", "")):
+        if item.get("status") != "pendente":
+            continue
+        alvo = item.get("alvo", "")
+        chave = _chave(alvo)
+        motivos: list[str] = []
+        if ID_RE.match(_normalize_alvo(alvo)):
+            motivos.append("alvo e um id")
+        if entidades.coberto(alvo, refs_ent):
+            motivos.append("ja pesquisado (entidade existe no vault)")
+        if chave in concluidos:
+            motivos.append("ja concluido")
+        if chave in vistos:
+            motivos.append(f"duplicado de {vistos[chave]}")
+        else:
+            vistos[chave] = item["id"]
+        if motivos:
+            plano.append({"id": item["id"], "alvo": alvo, "motivos": motivos})
+    if aplicar:
+        for p in plano:
+            mark_status(p["id"], "ignorado")
+    pendentes = sum(1 for i in itens if i.get("status") == "pendente")
+    return {"plano": plano, "pendentes": pendentes, "aplicado": aplicar}

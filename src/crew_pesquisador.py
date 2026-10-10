@@ -77,6 +77,8 @@ def build_pesquisador_crew(settings: Settings) -> Crew:
             "5. Expanda com moderacao: para cada pessoa/instituicao relevante ainda nao "
             "pesquisada, use adicionar_fila com profundidade = {profundidade} + 1 "
             "(NAO adicione se essa soma passar de {max_depth}).\n"
+            "   - Enfileire o NOME da entidade (nunca um id como 'pessoa-...') e nao "
+            "re-enfileire quem ja tem nota no vault (buscar_notas).\n"
             "6. Nunca invente fato ou vinculo sem fonte."
         ),
         agent=pesquisador,

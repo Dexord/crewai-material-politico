@@ -202,6 +202,19 @@ def agenda(status: str = "") -> int:
     return 0
 
 
+def fila_limpar(aplicar: bool = False) -> int:
+    res = fila.limpar(aplicar=aplicar)
+    plano = res["plano"]
+    print(f"Pendentes: {res['pendentes']} | a ignorar: {len(plano)}")
+    for p in plano:
+        print(f"  {p['alvo']}  ({p['id']})  [{'; '.join(p['motivos'])}]")
+    if aplicar:
+        print(f"\nMarcados como ignorado: {len(plano)}")
+    else:
+        print("\n(dry-run) Nada alterado. Use --aplicar para marcar como ignorado.")
+    return 0
+
+
 def deduplicar_cmd(aplicar: bool = False) -> int:
     res = deduplicar(aplicar=aplicar)
     plano = res["plano"]
@@ -301,6 +314,11 @@ def main() -> int:
     p_fund.add_argument("a", help="Id canonico (destino)")
     p_fund.add_argument("b", help="Id a fundir (origem)")
 
+    p_flim = sub.add_parser(
+        "fila-limpar", help="Lista/marca itens de fila ja pesquisados ou duplicados"
+    )
+    p_flim.add_argument("--aplicar", action="store_true", help="Marca como ignorado")
+
     args = parser.parse_args()
     if args.comando == "run":
         return run(args.tema, args.plataformas)
@@ -324,6 +342,8 @@ def main() -> int:
         return deduplicar_cmd(args.aplicar)
     if args.comando == "fundir":
         return fundir_cmd(args.a, args.b)
+    if args.comando == "fila-limpar":
+        return fila_limpar(args.aplicar)
     return 1
 
 

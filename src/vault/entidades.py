@@ -13,6 +13,7 @@ HONORIFICOS = {
     "deputado", "deputada", "ministro", "ministra", "presidente", "ex",
 }
 PARTICULAS = {"da", "de", "do", "dos", "das", "e"}
+SUFIXOS = {"s", "a", "sa", "ltda", "me", "eireli", "epp"}
 
 
 def tokens(nome) -> list[str]:
@@ -24,6 +25,31 @@ def tokens(nome) -> list[str]:
 
 def canonico(nome) -> str:
     return " ".join(tokens(nome))
+
+
+def chave(nome) -> str:
+    sem_parenteses = re.sub(r"\(.*?\)", " ", str(nome or ""))
+    return " ".join(t for t in tokens(sem_parenteses) if t not in SUFIXOS)
+
+
+def chaves_entidades() -> set[str]:
+    return {chave(fm.get("nome") or "") for fm in _entidades()}
+
+
+def coberto(nome: str, refs: set[str] | None = None) -> bool:
+    at = chave(nome).split()
+    if not at:
+        return False
+    for b in refs if refs is not None else chaves_entidades():
+        bt = b.split()
+        if not bt:
+            continue
+        if at == bt:
+            return True
+        n = min(len(at), len(bt))
+        if at[:n] == bt[:n]:
+            return True
+    return False
 
 
 def score(nome: str, alvo_fm: dict) -> tuple[float, str]:

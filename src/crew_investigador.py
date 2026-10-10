@@ -64,6 +64,17 @@ def build_investigador_crew(settings: Settings) -> Crew:
             "mesma pessoa) e noticias com entidades.\n"
             "4. Atualize a fila: adicionar_fila para pessoas/temas relevantes que ainda "
             "nao foram pesquisados (com motivo e prioridade).\n"
+            "   - Antes de adicionar, checar se a entidade/tema JA existe no vault "
+            "(buscar_notas) e se JA esta na fila (consultar_fila). NAO re-enfileire.\n"
+            "   - Enfileire sempre o NOME (nunca um id como 'pessoa-...').\n"
+            "   - Nao invente expansao de sigla (ex.: COAF nao e 'Conselho Administrativo "
+            "de Defesa Economica').\n"
+            "   - PRIORIDADE (1 a 5): quanto MAIOR a possibilidade de ser um escandalo "
+            "serio ou um possivel crime, segundo a legislacao brasileira, envolvendo a "
+            "familia Bolsonaro, maior a prioridade. Referencia: 5 = indicio de crime "
+            "grave ou lesao ao patrimonio publico ligado a familia; 4 = pessoa/empresa "
+            "central, citada com fonte forte; 3 = relevante (USE 3 se nao tiver certeza); "
+            "2 = contexto; 1 = tangencial.\n"
             "5. Use consultar_grafo e consultar_fila para identificar lacunas do grafo."
         ),
         agent=investigador,
