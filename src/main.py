@@ -82,13 +82,27 @@ def enfileirar(alvo: str, motivo: str = "", prioridade: int = 3) -> int:
     return 0
 
 
+def _ts() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _step_cb(step) -> None:
+    try:
+        agente = getattr(step, "agent", "") or getattr(step, "role", "")
+        saida = getattr(step, "output", step)
+        saida = " ".join(str(saida).split())[:160]
+        print(f"[{_ts()}] [passo] {agente}: {saida}", flush=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _processar_item(item: dict, settings) -> bool:
     alvo = item.get("alvo")
-    print(f"\n=== Pesquisando: {alvo} ({item['id']}) ===", flush=True)
+    print(f"\n[{_ts()}] >>> agente pesquisador (inicio): {alvo} ({item['id']})", flush=True)
     fila.mark_status(item["id"], "em_andamento")
     log_event(f"pesquisar iniciado: {alvo}", "fila")
     try:
-        crew = build_pesquisador_crew(settings)
+        crew = build_pesquisador_crew(settings, step_callback=_step_cb)
         result = crew.kickoff(
             inputs={
                 "alvo": alvo,
@@ -102,9 +116,10 @@ def _processar_item(item: dict, settings) -> bool:
         fila.mark_status(item["id"], "concluido")
         log_event(f"pesquisar concluido: {alvo}", "fila")
         _render_entidades()
+        print(f"[{_ts()}] <<< agente pesquisador (fim): {alvo}", flush=True)
         return True
     except Exception as exc:  # noqa: BLE001
-        print(f"Erro ao pesquisar {alvo}: {exc}", flush=True)
+        print(f"[{_ts()}] !!! erro no pesquisador ({alvo}): {exc}", flush=True)
         log_event(f"pesquisar erro em {alvo}: {exc}", "fila")
         fila.mark_status(item["id"], "pendente")
         return False
@@ -143,7 +158,7 @@ def _daemon(settings, horas: float, lote: int) -> int:
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     def log(msg: str) -> None:
-        line = f"[{datetime.now():%H:%M:%S}] {msg}"
+        line = f"[{_ts()}] {msg}"
         print(line, flush=True)
         with log_path.open("a", encoding="utf-8") as fh:
             fh.write(line + "\n")
@@ -158,9 +173,11 @@ def _daemon(settings, horas: float, lote: int) -> int:
             dry += 1
             log(f"fila vazia -> rodando investigador (dry={dry})")
             try:
-                build_investigador_crew(settings).kickoff()
+                log(">>> agente investigador (inicio)")
+                build_investigador_crew(settings, step_callback=_step_cb).kickoff()
+                log("<<< agente investigador (fim)")
             except Exception as exc:  # noqa: BLE001
-                log(f"erro no investigador: {exc}")
+                log(f"!!! erro no investigador: {exc}")
             if fila.pending_count() == 0:
                 if dry >= 3:
                     log("saturado (3 ciclos sem novidades). Encerrando.")

@@ -1,4 +1,6 @@
+import hashlib
 import re
+import time
 import unicodedata
 from datetime import datetime
 from pathlib import Path
@@ -6,6 +8,8 @@ from pathlib import Path
 import yaml
 
 from ..config import get_settings
+
+MAX_SLUG = 70
 
 TIPO_DIR = {
     "log": "log",
@@ -48,6 +52,9 @@ def make_id(tipo: str, text: str, dated: bool = False) -> str:
         "log": "log",
     }.get(tipo, tipo)
     base = slugify(text) or "sem-titulo"
+    if len(base) > MAX_SLUG:
+        digest = hashlib.sha1(str(text).encode("utf-8")).hexdigest()[:6]
+        base = base[:MAX_SLUG].rstrip("-") + "-" + digest
     if dated:
         return f"{prefix}-{datetime.now():%Y%m%d}-{base}"
     return f"{prefix}-{base}"
@@ -78,10 +85,30 @@ def save_note(fm: dict, body: str = "") -> Path:
     note_id = fm.get("id") or make_id(tipo, fm.get("titulo") or fm.get("nome", ""))
     fm["id"] = note_id
     path = note_path(tipo, note_id)
-    tmp = path.with_suffix(".md.tmp")
-    tmp.write_text(_serialize(fm, body), encoding="utf-8")
-    tmp.replace(path)
-    return path
+    content = _serialize(fm, body)
+
+    last_exc: OSError | None = None
+    for attempt in range(4):
+        tmp = path.with_suffix(".md.tmp")
+        try:
+            tmp.write_text(content, encoding="utf-8")
+            tmp.replace(path)
+            return path
+        except OSError as exc:  # noqa: PERF203
+            last_exc = exc
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            time.sleep(0.2 * (attempt + 1))
+
+    try:
+        path.write_text(content, encoding="utf-8")
+        return path
+    except OSError:
+        if last_exc is not None:
+            raise last_exc
+        raise
 
 
 def find_note(note_id: str) -> Path | None:

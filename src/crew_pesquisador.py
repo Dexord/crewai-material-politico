@@ -17,7 +17,7 @@ from .tools.vault_tools import (
 )
 
 
-def build_pesquisador_crew(settings: Settings) -> Crew:
+def build_pesquisador_crew(settings: Settings, step_callback=None) -> Crew:
     llm = LLM(
         model=f"ollama/{settings.ollama_model}",
         base_url=settings.ollama_base_url,
@@ -89,4 +89,10 @@ def build_pesquisador_crew(settings: Settings) -> Crew:
         ),
     )
 
-    return Crew(agents=[pesquisador], tasks=[tarefa], process=Process.sequential, verbose=True)
+    return Crew(
+        agents=[pesquisador],
+        tasks=[tarefa],
+        process=Process.sequential,
+        verbose=True,
+        step_callback=step_callback,
+    )

@@ -220,6 +220,8 @@ como plugáveis no futuro).
 
 O daemon roda no mesmo processo e imprime tudo **ao vivo no terminal** (stdout com
 `line_buffering`), gravando tambem um log resumido em `data/output/loop-<stamp>.log`.
+Cada linha (ciclos, inicio/fim de agente, passos e itens) sai com timestamp
+`[YYYY-MM-DD HH:MM:SS]`; os passos internos dos agentes vem via `step_callback`.
 
 - Ao iniciar, roda `reset_em_andamento()` — itens `em_andamento` órfãos de uma interrupção
   voltam para `pendente`.
@@ -300,6 +302,10 @@ rejeitados/ignorados. Portanto o contexto é controlado **do lado do Ollama**:
   reconfigura stdout/stderr para utf-8; rode com `$env:PYTHONUTF8=1` se necessário.
 - **Espaço em branco/fonte única**: quando o tema tem pouca cobertura, o modelo tende a
   voltar a argumento de ausência — as regras da seção 6 existem para barrar isso.
+- **Escrita no vault (EINVAL)**: nomes de nota derivados de frases inteiras geravam caminhos
+  longos; `save_note` agora **repete com backoff** (+ fallback de escrita direta) contra
+  `[Errno 22] Invalid argument` transitório do Windows, e `make_id` **limita o slug a 70 chars**
+  (+ hash curto). Notas antigas mantêm o id (nenhum link quebra).
 - **Entidades (pessoa x organização)**: `migrar-organizacoes` move notas para
   `organizacoes/` mantendo o **mesmo `id`** (ex.: `pessoa-banco-master`) para não quebrar
   os `[[wikilinks]]`. Dedupe via `entidades.py` (`deduplicar`/`fundir`); subconjunto de
