@@ -13,7 +13,7 @@ from .config import get_settings
 from .crew import build_crew
 from .crew_investigador import build_investigador_crew
 from .crew_pesquisador import build_pesquisador_crew
-from .output import postagem
+from .output import entregaveis, postagem
 from .output.render import save_output
 from .vault import queue as fila
 from .vault.entidades import deduplicar, fundir
@@ -23,24 +23,62 @@ from .vault.render import atualizar_entidades
 from .vault.vault import ensure_vault
 
 
-def run(tema: str, plataformas: str = "") -> int:
+def run(tema: str, saidas: str = "") -> int:
     settings = get_settings()
-    plats = [p.strip().lower() for p in plataformas.split(",") if p.strip()] or None
-    crew = build_crew(settings, plats)
+    tokens = [s.strip().lower() for s in saidas.split(",") if s.strip()]
+    if any(t in ("todas", "tudo", "all") for t in tokens):
+        tokens = ["video", "redes", "reportagem"]
+    tokens = [t for t in tokens if t in ("video", "redes", "reportagem")]
+
+    crew = build_crew(settings, tokens or None)
     result = crew.kickoff(inputs={"tema": tema})
-    text = getattr(result, "raw", str(result))
-    print(text)
-    path = save_output(text, settings.output_dir, tema)
+    outs = getattr(result, "tasks_output", []) or []
+
+    revisao = outs[3] if len(outs) > 3 else None
+    texto_final = getattr(revisao, "raw", None) or getattr(result, "raw", str(result))
+    print(texto_final)
+    path = save_output(texto_final, settings.output_dir, tema)
     print(f"\nSaída salva em: {path}")
 
-    if plats:
-        pacote = getattr(result, "pydantic", None)
+    idx = 4
+    if "video" in tokens and idx < len(outs):
+        rv = getattr(outs[idx], "pydantic", None)
+        if rv is not None:
+            print(f"Roteiro de vídeo salvo em: {entregaveis.salvar_roteiro_video(rv, tema)}")
+        idx += 1
+    if "redes" in tokens and idx < len(outs):
+        pacote = getattr(outs[idx], "pydantic", None)
         if pacote is not None:
-            ids = postagem.add_pacote(pacote, tema)
-            print(f"\n{len(ids)} peças enfileiradas (rascunho): {', '.join(ids)}")
-            print("Arquivos de copiar-e-colar em: data/output/postagens/")
-        else:
-            print("\nAviso: saída estruturada de peças indisponível.")
+            posts = [
+                {
+                    "plataforma": "facebook",
+                    "texto": pacote.facebook.texto,
+                    "hashtags": pacote.facebook.hashtags,
+                }
+            ]
+            thread = pacote.bluesky.posts
+            for i, texto_bs in enumerate(thread, 1):
+                posts.append(
+                    {
+                        "plataforma": "bluesky",
+                        "texto": texto_bs,
+                        "hashtags": [],
+                        "nota": f"fio {i}/{len(thread)}",
+                    }
+                )
+            ids = postagem.add_posts(posts, tema)
+            print(f"{len(ids)} posts enfileirados (rascunho): {', '.join(ids)}")
+            print(
+                f"Imagem (Canva) — título: '{pacote.imagem.titulo}' | "
+                f"subtítulo: '{pacote.imagem.subtitulo}'"
+            )
+            print(f"Pacote de redes salvo em: {entregaveis.salvar_pacote_redes(pacote, tema)}")
+        idx += 1
+    if "reportagem" in tokens and idx < len(outs):
+        rep = getattr(outs[idx], "pydantic", None)
+        if rep is not None:
+            print(f"Reportagem salva em: {entregaveis.salvar_reportagem(rep, tema)}")
+        idx += 1
 
     _render_entidades()
     return 0
@@ -290,7 +328,9 @@ def main() -> int:
     p_run = sub.add_parser("run", help="Executa o pipeline de conteudo")
     p_run.add_argument("--tema", required=True, help="Tema da pesquisa")
     p_run.add_argument(
-        "--plataformas", default="", help="Gera pecas por plataforma (ex: facebook,tiktok)"
+        "--saidas",
+        default="",
+        help="Gera entregaveis extras: video, redes, reportagem (ou todas)",
     )
 
     sub.add_parser("investigar", help="Estrutura o vault e mantem a fila de pesquisa")
@@ -338,7 +378,7 @@ def main() -> int:
 
     args = parser.parse_args()
     if args.comando == "run":
-        return run(args.tema, args.plataformas)
+        return run(args.tema, args.saidas)
     if args.comando == "investigar":
         return investigar()
     if args.comando == "pesquisar":

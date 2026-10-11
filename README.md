@@ -31,7 +31,9 @@ cabeça": cada afirmação precisa de uma `source_url`.
   Obsidian). Guarda notícias, fatos, pessoas e organizações com **fonte** em cada relação.
 - **Agente investigador** que liga pessoas/instituições e mantém uma **fila de pesquisa**.
 - **Loop autônomo** (ex.: por 6 horas) que alterna investigar e pesquisar sozinho.
-- **Export por plataforma** (Facebook/TikTok) e **fila de postagem** local com status.
+- **Entregáveis extras** (opcionais, com `--saidas`): **roteiro de vídeo curto** (~1m30s),
+  **posts para Facebook e Bluesky** e uma **reportagem/notícia** extensa — além da **fila de
+  postagem** local com status.
 - **Resolução de entidades** determinística: evita duplicar pessoas/organizações e
   oferece dedupe (`deduplicar`/`fundir`).
 - **"Bibliotecário" determinístico** que gera o corpo legível de cada entidade
@@ -57,11 +59,13 @@ cabeça": cada afirmação precisa de uma `source_url`.
              ┌──────▼──────┐
              │  Revisor    │  gate de FATO e de ENQUADRAMENTO (corta o que não tem fonte)
              └──────┬──────┘
-                    │ (opcional, com --plataformas)
-             ┌──────▼──────┐
-             │  Redator de │  adapta para Facebook/TikTok → fila de postagem
-             │  Plataforma │
-             └─────────────┘
+                    │ (opcional, com --saidas)
+        ┌───────────┼───────────────────────────┐
+ ┌──────▼──────┐ ┌──▼────────────┐ ┌────────────▼────────┐
+ │ Roteirista  │ │ Copywriter de │ │ Redator Jornalista  │
+ │ de Vídeo    │ │ Redes (FB/BS) │ │ (reportagem/notícia)│
+ │ (~1m30s)    │ │               │ │                     │
+ └─────────────┘ └───────────────┘ └─────────────────────┘ --> fila de postagem / arquivos
 ```
 
 Em paralelo, há um segundo fluxo — o **grafo de conhecimento**:
@@ -159,14 +163,18 @@ uv run python -m src.main run --tema "votações de Flávio Bolsonaro no Senado"
 
 Gera 5 manchetes com roteiro e `source_url`, e salva um `.md` em `data/output/`.
 
-Com `--plataformas`, também cria as peças prontas para publicar:
+Com `--saidas`, também gera entregáveis extras (agentes especializados). Valores:
+`video`, `redes`, `reportagem` (ou `todas`):
 
 ```powershell
-uv run python -m src.main run --tema "..." --plataformas facebook,tiktok
+uv run python -m src.main run --tema "..." --saidas todas
 ```
 
-As peças saem como "rascunho" na fila e em arquivos de copiar-e-colar
-(`data/output/postagens/`).
+- **video** → roteiro de vídeo curto (~1m30s) em `data/output/entregaveis/`.
+- **redes** → post de **Facebook** + **fio do Bluesky** (até 4 posts, com link) na **fila de
+  postagem** (rascunho); e o **título/subtítulo da imagem** (para o Canva) em
+  `data/output/entregaveis/`.
+- **reportagem** → reportagem/notícia extensa em `data/output/entregaveis/`.
 
 ### 6.2 Fila de postagem (export-only, sem postar sozinho)
 

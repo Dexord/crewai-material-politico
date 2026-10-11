@@ -1,7 +1,7 @@
 from crewai import Agent, Crew, LLM, Process, Task
 
 from .config import Settings
-from .output.postagem import Pacote
+from .output.entregaveis import PacoteRedes, Reportagem, RoteiroVideo
 from .profiles import profiles_as_markdown
 from .tools.scraper import extract_markdown
 from .tools.search import search_web
@@ -46,7 +46,7 @@ TOM_ENQUADRAMENTO = (
 )
 
 
-def build_crew(settings: Settings, plataformas: list[str] | None = None) -> Crew:
+def build_crew(settings: Settings, saidas: list[str] | None = None) -> Crew:
     llm_preciso = LLM(
         model=f"ollama/{settings.ollama_model}",
         base_url=settings.ollama_base_url,
@@ -260,58 +260,112 @@ def build_crew(settings: Settings, plataformas: list[str] | None = None) -> Crew
 
     agents = [pesquisador, analista, roteirista, revisor]
     tasks = [tarefa_pesquisa, tarefa_analise, tarefa_roteiro, tarefa_revisao]
+    saidas = saidas or []
 
-    if plataformas:
-        redator = Agent(
-            role="Redator de Plataforma",
+    if "video" in saidas:
+        roteirista_video = Agent(
+            role="Roteirista de Video Curto",
             goal=(
-                "Adaptar cada manchete aprovada para o formato de cada plataforma "
-                "(Facebook/TikTok), pronto para publicar."
+                "Escrever um roteiro de video curto (aproximadamente 1m30s) sobre o tema, "
+                "a partir da versao aprovada pelo revisor, com gancho, cenas cronometradas, "
+                "narracao e texto de tela."
             ),
             backstory=(
-                "Voce e redator de redes sociais de campanha de oposicao. Adapta o material "
-                "aprovado para Facebook e TikTok sem mudar o fato nem o enquadramento. Para "
-                "TikTok, voce escreve o titulo, o texto da publicacao e o texto da arte "
-                "(titulo + subtitulo) no padrao de midia profissional."
+                "Voce e roteirista de video curto de campanha de oposicao. Prende nos "
+                "primeiros segundos e sustenta cada afirmacao em fato com fonte, sem distorcer."
             ),
             llm=llm_criativo,
             verbose=True,
             allow_delegation=False,
         )
-
-        instrucoes = []
-        if "facebook" in plataformas:
-            instrucoes.append(
-                "FACEBOOK: preencha 'texto_publicacao' (legenda com gancho, 2 a 4 linhas, "
-                "CTA e link) e 'hashtags' (3 a 5)."
-            )
-        if "tiktok" in plataformas:
-            instrucoes.append(
-                "TIKTOK: preencha 'titulo' (curto, ate 8 palavras, exibido no video), "
-                "'texto_publicacao' (legenda), 'texto_tela' (uma linha por cena) e o texto "
-                "da IMAGEM que sera usada: 'imagem_titulo' (ate 6 palavras, de impacto) e "
-                "'imagem_subtitulo' (uma linha curta que contextualiza) — padrao de midia "
-                "profissional, titulo + subtitulo, sem excesso de texto na arte."
-            )
-
-        tarefa_pacote = Task(
+        tarefa_video = Task(
             description=(
-                "A partir da versao final aprovada pelo revisor, gere as pecas de publicacao "
-                f"para as plataformas: {', '.join(plataformas)}.\n\n"
-                "Para CADA manchete aprovada, gere UMA peca por plataforma, preenchendo todos "
-                "os campos do schema.\n\n"
-                "Instrucoes por plataforma:\n" + "\n".join(instrucoes) + "\n\n"
+                "A partir da versao final aprovada pelo revisor, escreva um roteiro de video "
+                "curto de aproximadamente 1 minuto e 30 segundos sobre o tema.\n"
+                "Estruture em cenas cronometradas (ex.: 0:00-0:12), cada uma com 'narracao' "
+                "(o que e falado) e 'texto_tela' (o que aparece na tela). Comece com um gancho "
+                "forte e termine com um CTA.\n\n"
                 f"{TOM_ENQUADRAMENTO}\n"
-                "Nao mude fatos, numeros nem fontes. Preencha 'source_url' com a fonte da "
-                "manchete e 'disclosure' com o aviso de conteudo gerado por IA."
+                "Nao invente fatos. Preencha 'source_urls' com as fontes usadas."
             ),
-            agent=redator,
-            expected_output="Pacote com as pecas por plataforma, no schema definido.",
-            output_pydantic=Pacote,
+            agent=roteirista_video,
+            expected_output="Roteiro de video no schema definido (gancho, cenas, CTA, fontes).",
+            output_pydantic=RoteiroVideo,
             context=[tarefa_revisao],
         )
-        agents.append(redator)
-        tasks.append(tarefa_pacote)
+        agents.append(roteirista_video)
+        tasks.append(tarefa_video)
+
+    if "redes" in saidas:
+        copywriter_redes = Agent(
+            role="Copywriter de Redes",
+            goal=(
+                "Escrever a publicacao para Facebook, um fio para o Bluesky e o texto de uma "
+                "imagem (titulo + subtitulo), respeitando o formato de cada um."
+            ),
+            backstory=(
+                "Voce e copywriter de redes sociais de campanha de oposicao. Adapta o material "
+                "aprovado ao formato de cada rede: Facebook mais longo (gancho e CTA); Bluesky "
+                "em formato de fio (ate 4 posts de ~300 caracteres, com o link em cada post "
+                "quando houver). Voce tambem cria titulo e subtitulo curtos de imagem. Nao muda "
+                "fato nem enquadramento."
+            ),
+            llm=llm_criativo,
+            verbose=True,
+            allow_delegation=False,
+        )
+        tarefa_redes = Task(
+            description=(
+                "A partir da versao final aprovada pelo revisor, produza:\n"
+                "1. 'facebook': texto mais longo (gancho, desenvolvimento, CTA) + 'hashtags' "
+                "(3 a 5). NAO precisa de fio nem de link em cada linha.\n"
+                "2. 'bluesky': um FIO de 1 a 4 posts, em ordem, cada um com no maximo ~300 "
+                "caracteres. Quando houver link/fonte, INCLUA o link no proprio post.\n"
+                "3. 'imagem': 'titulo' (ate ~6 palavras) e 'subtitulo' (uma linha curta) para "
+                "uma arte que sera criada no Canva.\n\n"
+                f"{TOM_ENQUADRAMENTO}\n"
+                "Nao mude fatos nem fontes."
+            ),
+            agent=copywriter_redes,
+            expected_output=(
+                "Pacote com facebook, fio do bluesky (1-4 posts) e titulo/subtitulo de imagem."
+            ),
+            output_pydantic=PacoteRedes,
+            context=[tarefa_revisao],
+        )
+        agents.append(copywriter_redes)
+        tasks.append(tarefa_redes)
+
+    if "reportagem" in saidas:
+        redator_jornalista = Agent(
+            role="Redator Jornalista",
+            goal=(
+                "Escrever uma reportagem/noticia extensa (formato blog) sobre o tema, com "
+                "titulo, linha fina, lide e corpo com secoes."
+            ),
+            backstory=(
+                "Voce e jornalista de oposicao. Escreve materia aprofundada, com enquadramento "
+                "por fato e consequencia, hierarquizando dados e citando as fontes."
+            ),
+            llm=llm_analista,
+            verbose=True,
+            allow_delegation=False,
+        )
+        tarefa_reportagem = Task(
+            description=(
+                "A partir da versao final aprovada pelo revisor e do dossie, escreva uma "
+                "reportagem/noticia extensa (formato blog) sobre o tema, com: 'titulo', "
+                "'linha_fina', 'lead' (lide) e 'corpo' em markdown com secoes (## ...).\n\n"
+                f"{TOM_ENQUADRAMENTO}\n"
+                "Nao invente fatos. Preencha 'fontes' com as URLs usadas."
+            ),
+            agent=redator_jornalista,
+            expected_output="Reportagem no schema definido (titulo, linha fina, lide, corpo, fontes).",
+            output_pydantic=Reportagem,
+            context=[tarefa_revisao],
+        )
+        agents.append(redator_jornalista)
+        tasks.append(tarefa_reportagem)
 
     return Crew(
         agents=agents,

@@ -93,6 +93,32 @@ def add_pacote(pacote: Pacote, tema: str | None = None) -> list[str]:
     return novos_ids
 
 
+def add_posts(posts: list[dict], tema: str) -> list[str]:
+    existentes = _load()
+    novos: list[str] = []
+    for post in posts:
+        plataforma = _slug(post.get("plataforma", ""))
+        texto = post.get("texto", "")
+        base = f"peca-{datetime.now():%Y%m%d}-{plataforma}-{_slug(texto)[:40]}"
+        peca_id = _unique_id(existentes, base)
+        registro = {
+            "id": peca_id,
+            "tema": tema,
+            "plataforma": post.get("plataforma", ""),
+            "texto": texto,
+            "hashtags": post.get("hashtags", []),
+            "source_urls": post.get("source_urls", []),
+            "nota": post.get("nota", ""),
+            "status": "rascunho",
+            "criado_em": f"{datetime.now():%Y-%m-%d %H:%M:%S}",
+        }
+        existentes.append(registro)
+        novos.append(peca_id)
+        _write_txt(registro)
+    _save(existentes)
+    return novos
+
+
 def list_pecas(status: str | None = None) -> list[dict]:
     pecas = _load()
     if status:
@@ -118,36 +144,50 @@ def _write_txt(peca: dict) -> Path:
 
 
 def _render(peca: dict) -> str:
-    r = peca.get("roteiro", {})
-    linha = [f"### {peca.get('plataforma', '').upper()} — {peca.get('perfil_alvo', '')}"]
-    linha.append(f"Manchete: {peca.get('manchete', '')}")
+    linhas = [f"### {(peca.get('plataforma') or '').upper()}"]
+    if peca.get("nota"):
+        linhas.append(f"[{peca['nota']}]")
+    if peca.get("manchete"):
+        linhas.append(f"Manchete: {peca['manchete']}")
+    if peca.get("titulo"):
+        linhas.append(f"Título: {peca['titulo']}")
+    if peca.get("perfil_alvo"):
+        linhas.append(f"Perfil-alvo: {peca['perfil_alvo']}")
 
-    if peca.get("plataforma") == "tiktok":
-        linha.append(f"Título: {peca.get('titulo') or peca.get('manchete', '')}")
-        linha.append("")
-        linha.append("IMAGEM (texto da arte):")
-        linha.append(f"  Título: {peca.get('imagem_titulo') or peca.get('manchete', '')}")
-        linha.append(f"  Subtítulo: {peca.get('imagem_subtitulo') or ''}")
-        if peca.get("texto_tela"):
-            linha.append("")
-            linha.append("Texto na tela (por cena):")
-            for cena in peca["texto_tela"]:
-                linha.append(f"  - {cena}")
+    roteiro = peca.get("roteiro") or {}
+    if roteiro:
+        linhas += [
+            "",
+            "Roteiro:",
+            f"  - Hook: {roteiro.get('hook', '')}",
+            f"  - Problema: {roteiro.get('problema', '')}",
+            f"  - Evidência: {roteiro.get('evidencia', '')}",
+            f"  - CTA: {roteiro.get('cta', '')}",
+        ]
+    if peca.get("imagem_titulo") or peca.get("imagem_subtitulo"):
+        linhas += [
+            "",
+            "IMAGEM (texto da arte):",
+            f"  Título: {peca.get('imagem_titulo', '')}",
+            f"  Subtítulo: {peca.get('imagem_subtitulo', '')}",
+        ]
+    if peca.get("texto_tela"):
+        linhas += ["", "Texto na tela (por cena):"] + [f"  - {c}" for c in peca["texto_tela"]]
 
-    linha.append("")
-    linha.append("Roteiro:")
-    linha.append(f"  - Hook (0-2s): {r.get('hook', '')}")
-    linha.append(f"  - Problema: {r.get('problema', '')}")
-    linha.append(f"  - Evidência: {r.get('evidencia', '')}")
-    linha.append(f"  - CTA: {r.get('cta', '')}")
-    linha.append("")
-    linha.append(f"Texto da publicação: {peca.get('texto_publicacao', '')}")
+    texto = peca.get("texto_publicacao") or peca.get("texto") or ""
+    if texto:
+        linhas += ["", f"Texto da publicação: {texto}"]
     if peca.get("hashtags"):
-        linha.append("Hashtags: " + " ".join(peca["hashtags"]))
-    linha.append(f"Fonte: {peca.get('source_url', '')}")
-    linha.append("")
-    linha.append(peca.get("disclosure") or DISCLOSURE)
-    return "\n".join(linha) + "\n"
+        linhas.append("Hashtags: " + " ".join(peca["hashtags"]))
+
+    fontes = list(peca.get("source_urls") or [])
+    if peca.get("source_url"):
+        fontes.append(peca["source_url"])
+    for f in fontes:
+        linhas.append(f"Fonte: {f}")
+
+    linhas += ["", peca.get("disclosure") or DISCLOSURE]
+    return "\n".join(linhas) + "\n"
 
 
 def render_all() -> list[Path]:

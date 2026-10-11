@@ -58,8 +58,8 @@ uv run python -m src.main fundir <id_a> <id_b>      # funde b -> a (reescreve li
 uv run python -m src.main pesquisar --horas 6 --lote 10
 .\scripts\loop-noite.ps1 -Horas 6               # wrapper: powercfg + aquece + daemon
 
-# Export por plataforma + fila de postagem (F3, export-only)
-uv run python -m src.main run --tema "<tema>" --plataformas facebook,tiktok
+# Entregaveis extras + fila de postagem (F3, export-only)
+uv run python -m src.main run --tema "<tema>" --saidas todas
 uv run python -m src.main agenda [--status rascunho]   # lista a fila de postagem
 uv run python -m src.main aprovar <id>                 # rascunho -> aprovado
 uv run python -m src.main publicar <id>                # aprovado -> publicado
@@ -89,6 +89,7 @@ src/
   main.py           # CLI: run / investigar / pesquisar / agenda / aprovar / publicar
   output/render.py  # salva saída em data/output/
   output/postagem.py # schema Peca/Pacote (pydantic), fila de postagem (JSON) e .txt por plataforma
+  output/entregaveis.py # schemas RoteiroVideo/PacoteRedes/Reportagem + gravacao em data/output/entregaveis/
   vault/
     vault.py        # ler/escrever notas c/ frontmatter (PyYAML), id/slug, escrita atômica
     log.py          # append no log/<data>.md
@@ -199,22 +200,24 @@ mesmo primeiro/último.
   merge manual — junta `cargos`/`vinculos`/`mencionado_em`, adiciona alias, **reescreve os
   `[[id_b]]`→`[[id_a]]`** no vault e apaga a nota B. Confirmação manual por decisão.
 
-### Export por plataforma e fila de postagem (F3)
+### Entregaveis extras e fila de postagem (F3)
 
-Export-only (sem auto-post). Com `run --plataformas facebook,tiktok`, um **Redator de
-Plataforma** (5º agente, só quando a flag é usada) adapta a versão aprovada pelo revisor e
-emite um `Pacote` (saída estruturada `Peca`/`Pacote` em `src/output/postagem.py`).
+Export-only (sem auto-post). Com `run --saidas video,redes,reportagem` (ou `todas`), o crew
+ganha agentes especializados (5o/6o/7o) que partem da versao aprovada pelo revisor:
 
-- **Facebook**: `texto_publicacao` + `hashtags`.
-- **TikTok**: `titulo`, `texto_publicacao`, `texto_tela` (por cena) e texto da **imagem**
-  (`imagem_titulo` + `imagem_subtitulo`, padrão de mídia profissional) — a imagem é feita
-  à mão pelo usuário.
-- Todas as peças saem com `source_url` e `disclosure` de IA.
+- **Roteirista de Video Curto** (`video`): roteiro de ~1m30s com gancho, cenas cronometradas
+  (narracao + texto de tela) e CTA. Schema `RoteiroVideo` (`src/output/entregaveis.py`).
+- **Copywriter de Redes** (`redes`): post de **Facebook** + **fio do Bluesky** (1–4 posts,
+  com link em cada post quando houver) + **título/subtítulo de imagem** (Canva). Schema
+  `PacoteRedes`; os posts viram peças na fila de postagem e o pacote (com a imagem) vai para
+  `data/output/entregaveis/`.
+- **Redator Jornalista** (`reportagem`): **reportagem/noticia** extensa (titulo, linha fina,
+  lide, corpo em markdown com secoes). Schema `Reportagem`.
 
-Fila local em `data/output/fila-postagem.json` (ciclo `rascunho -> aprovado -> publicado`)
-e arquivos de copiar-e-colar em `data/output/postagens/<id>.txt`. Comandos: `agenda`,
-`aprovar <id>`, `publicar <id>`. **Sem** `.ics`, Task Scheduler ou auto-post (deixados
-como plugáveis no futuro).
+Saidas em `data/output/entregaveis/` (video, reportagem) e na fila de postagem
+`data/output/fila-postagem.json` + `data/output/postagens/<id>.txt` (ciclo
+`rascunho -> aprovado -> publicado`; comandos `agenda`/`aprovar`/`publicar`). **Sem** `.ics`,
+Task Scheduler ou auto-post (deixados como plugaveis no futuro).
 
 ### Loop autonomo (`pesquisar --horas N`)
 
