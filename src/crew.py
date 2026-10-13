@@ -1,7 +1,7 @@
 from crewai import Agent, Crew, LLM, Process, Task
 
 from .config import Settings
-from .output.entregaveis import PacoteRedes, Reportagem, RoteiroVideo
+from .output.entregaveis import PacoteRedesMulti, PacoteVideos, Reportagem
 from .profiles import profiles_as_markdown
 from .tools.scraper import extract_markdown
 from .tools.search import search_web
@@ -209,11 +209,14 @@ def build_crew(settings: Settings, saidas: list[str] | None = None, step_callbac
 
     tarefa_roteiro = Task(
         description=(
-            "Com base no dossie e na analise de impacto, crie exatamente 5 manchetes "
-            "impactantes e engajantes que elucidem um problema concreto ligado a acoes ou "
-            "promessas de Flavio Bolsonaro.\n\n"
+            "Com base no dossie e na analise de impacto, crie EXATAMENTE UMA manchete para "
+            "CADA perfil demografico abaixo (sao 5 perfis, portanto 5 manchetes, uma por "
+            "perfil), impactantes e engajantes, que elucidem um problema concreto ligado a "
+            "acoes ou promessas de Flavio Bolsonaro.\n\n"
+            f"{profiles_as_markdown()}\n\n"
             f"{TOM_ENQUADRAMENTO}\n"
             "Regras das 5 manchetes:\n"
+            "- UMA manchete por perfil: cubra os 5 perfis, sem repetir perfil.\n"
             "- As 5 devem tratar de FATOS DIFERENTES entre si. NUNCA repita o mesmo fato/"
             "angulo (nem uma variacao dele) em duas manchetes; se faltar, use outro fato "
             "do dossie — mas o FATO destacado tem que mudar.\n"
@@ -244,6 +247,8 @@ def build_crew(settings: Settings, saidas: list[str] | None = None, step_callbac
             "(buscar_na_web / extrair_markdown).\n\n"
             "Regras de ADERENCIA:\n"
             "- Cada manchete tem que ter a ver com o TEMA: {tema}.\n"
+            "- Garanta 5 manchetes, UMA por perfil (cubra os 5 perfis); se algum perfil "
+            "ficar sem manchete, reescreva/troque para cobri-lo.\n"
             "- Cada manchete tem que tocar em alguma DOR ou gatilho de um dos perfis abaixo; "
             "se nao tocar, reescreva ou troque por outra pauta do dossie.\n\n"
             f"{profiles_as_markdown()}\n\n"
@@ -314,17 +319,17 @@ def build_crew(settings: Settings, saidas: list[str] | None = None, step_callbac
         )
         tarefa_video = Task(
             description=(
-                "A partir da versao final aprovada pelo revisor, escreva um roteiro de video "
-                "curto de aproximadamente 1 minuto e 30 segundos sobre o tema.\n"
-                "Estruture em cenas cronometradas (ex.: 0:00-0:12), cada uma com 'narracao' "
-                "(o que e falado) e 'texto_tela' (o que aparece na tela). Comece com um gancho "
-                "forte e termine com um CTA.\n\n"
+                "A partir da versao final aprovada pelo revisor (5 manchetes, uma por perfil), "
+                "escreva UM roteiro de video curto (~1m30s) PARA CADA manchete/perfil "
+                "(portanto 5 roteiros).\n"
+                "Cada roteiro deve ter: 'perfil_alvo', 'titulo', 'gancho', cenas cronometradas "
+                "('narracao' + 'texto_tela') e 'CTA', mantendo o enquadramento do perfil.\n\n"
                 f"{TOM_ENQUADRAMENTO}\n"
                 "Nao invente fatos. Preencha 'source_urls' com as fontes usadas."
             ),
             agent=roteirista_video,
-            expected_output="Roteiro de video no schema definido (gancho, cenas, CTA, fontes).",
-            output_pydantic=RoteiroVideo,
+            expected_output="Pacote com 5 roteiros de video (um por perfil).",
+            output_pydantic=PacoteVideos,
             context=[tarefa_revisao],
         )
         agents.append(roteirista_video)
@@ -350,21 +355,22 @@ def build_crew(settings: Settings, saidas: list[str] | None = None, step_callbac
         )
         tarefa_redes = Task(
             description=(
-                "A partir da versao final aprovada pelo revisor, produza:\n"
-                "1. 'facebook': texto mais longo (gancho, desenvolvimento, CTA) + 'hashtags' "
-                "(3 a 5). NAO precisa de fio nem de link em cada linha.\n"
-                "2. 'bluesky': um FIO de 1 a 4 posts, em ordem, cada um com no maximo ~300 "
-                "caracteres. Quando houver link/fonte, INCLUA o link no proprio post.\n"
-                "3. 'imagem': 'titulo' (ate ~6 palavras) e 'subtitulo' (uma linha curta) para "
-                "uma arte que sera criada no Canva.\n\n"
+                "A partir da versao final aprovada pelo revisor (5 manchetes, uma por perfil), "
+                "produza UM item de redes PARA CADA manchete/perfil (portanto 5 itens).\n"
+                "Cada item deve ter:\n"
+                "- 'perfil_alvo'\n"
+                "- 'facebook': texto mais longo (gancho, desenvolvimento, CTA) + 'hashtags' "
+                "(3 a 5).\n"
+                "- 'bluesky': um FIO de 1 a 4 posts, em ordem, cada um com no maximo ~300 "
+                "caracteres; quando houver link/fonte, INCLUA o link no proprio post.\n"
+                "- 'imagem': 'titulo' (ate ~6 palavras) e 'subtitulo' (uma linha curta) para "
+                "arte no Canva.\n\n"
                 f"{TOM_ENQUADRAMENTO}\n"
                 "Nao mude fatos nem fontes."
             ),
             agent=copywriter_redes,
-            expected_output=(
-                "Pacote com facebook, fio do bluesky (1-4 posts) e titulo/subtitulo de imagem."
-            ),
-            output_pydantic=PacoteRedes,
+            expected_output="Pacote com 5 itens de redes (um por perfil), no schema definido.",
+            output_pydantic=PacoteRedesMulti,
             context=[tarefa_revisao],
         )
         agents.append(copywriter_redes)

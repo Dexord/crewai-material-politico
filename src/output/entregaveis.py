@@ -17,12 +17,18 @@ class CenaVideo(BaseModel):
 
 class RoteiroVideo(BaseModel):
     tema: str
+    perfil_alvo: str = Field(default="", description="Perfil demografico alvo")
     titulo: str = Field(description="Titulo do video")
     duracao: str = Field(default="1m30s", description="Duracao estimada")
     gancho: str = Field(description="Frase de abertura (primeiros segundos)")
     cenas: list[CenaVideo] = Field(default_factory=list)
     cta: str = Field(default="", description="Chamada para acao final")
     source_urls: list[str] = Field(default_factory=list)
+
+
+class PacoteVideos(BaseModel):
+    tema: str
+    videos: list[RoteiroVideo] = Field(default_factory=list)
 
 
 class PostFacebook(BaseModel):
@@ -45,10 +51,15 @@ class TextoImagem(BaseModel):
 
 
 class PacoteRedes(BaseModel):
-    tema: str
+    perfil_alvo: str = Field(default="", description="Perfil demografico alvo")
     facebook: PostFacebook
     bluesky: ThreadBluesky
     imagem: TextoImagem
+
+
+class PacoteRedesMulti(BaseModel):
+    tema: str
+    itens: list[PacoteRedes] = Field(default_factory=list)
 
 
 class Reportagem(BaseModel):
@@ -77,7 +88,7 @@ def salvar_roteiro_video(rv: RoteiroVideo, tema: str) -> Path:
     linhas = [
         f"# Roteiro de video — {rv.titulo}",
         "",
-        f"**Tema:** {tema}  |  **Duracao:** {rv.duracao}",
+        f"**Tema:** {tema}  |  **Perfil-alvo:** {rv.perfil_alvo}  |  **Duracao:** {rv.duracao}",
         "",
         f"**Gancho:** {rv.gancho}",
         "",
@@ -92,7 +103,7 @@ def salvar_roteiro_video(rv: RoteiroVideo, tema: str) -> Path:
     if rv.source_urls:
         linhas += ["", "## Fontes"] + [f"- {u}" for u in rv.source_urls]
     linhas += ["", "---", DISCLOSURE]
-    path = _path("roteiro-video", tema)
+    path = _path("roteiro-video", f"{tema}-{rv.perfil_alvo}")
     path.write_text("\n".join(linhas) + "\n", encoding="utf-8")
     return path
 
@@ -118,7 +129,7 @@ def salvar_reportagem(rep: Reportagem, tema: str) -> Path:
 def salvar_pacote_redes(pacote: PacoteRedes, tema: str) -> Path:
     n = len(pacote.bluesky.posts)
     linhas = [
-        f"# Redes — {tema}",
+        f"# Redes — {tema} ({pacote.perfil_alvo})",
         "",
         "## Imagem (para criar no Canva)",
         f"- **Título:** {pacote.imagem.titulo}",
@@ -133,6 +144,6 @@ def salvar_pacote_redes(pacote: PacoteRedes, tema: str) -> Path:
     for i, post in enumerate(pacote.bluesky.posts, 1):
         linhas += [f"### Post {i}/{n}", post]
     linhas += ["", "---", DISCLOSURE]
-    path = _path("redes", tema)
+    path = _path("redes", f"{tema}-{pacote.perfil_alvo}")
     path.write_text("\n".join(linhas) + "\n", encoding="utf-8")
     return path

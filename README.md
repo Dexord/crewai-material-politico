@@ -164,7 +164,8 @@ Todos os comandos rodam com `uv run python -m src.main <comando>`.
 uv run python -m src.main run --tema "votações de Flávio Bolsonaro no Senado"
 ```
 
-Gera 5 manchetes com roteiro e `source_url`, e salva um `.md` em `data/output/`.
+Gera 5 manchetes (**uma por perfil demográfico**) com roteiro e `source_url`, e salva um `.md`
+em `data/output/`.
 
 Com `--saidas`, também gera entregáveis extras (agentes especializados). Valores:
 `video`, `redes`, `reportagem` (ou `todas`):
@@ -173,10 +174,9 @@ Com `--saidas`, também gera entregáveis extras (agentes especializados). Valor
 uv run python -m src.main run --tema "..." --saidas todas
 ```
 
-- **video** → roteiro de vídeo curto (~1m30s) em `data/output/entregaveis/`.
-- **redes** → post de **Facebook** + **fio do Bluesky** (até 4 posts, com link) na **fila de
-  postagem** (rascunho); e o **título/subtítulo da imagem** (para o Canva) em
-  `data/output/entregaveis/`.
+- **video** → roteiro de vídeo curto (~1m30s) **por perfil** em `data/output/entregaveis/`.
+- **redes** → **um item por perfil** (post de **Facebook** + **fio do Bluesky**, com link) na
+  **fila de postagem**; e o **título/subtítulo da imagem** (Canva) em `data/output/entregaveis/`.
 - **reportagem** → reportagem/notícia extensa em `data/output/entregaveis/`.
 
 ### 6.2 Fila de postagem (export-only, sem postar sozinho)

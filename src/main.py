@@ -45,37 +45,39 @@ def run(tema: str, saidas: str = "") -> int:
 
     idx = 4
     if "video" in tokens and idx < len(outs):
-        rv = getattr(outs[idx], "pydantic", None)
-        if rv is not None:
-            print(f"Roteiro de vídeo salvo em: {entregaveis.salvar_roteiro_video(rv, tema)}")
-        idx += 1
-    if "redes" in tokens and idx < len(outs):
         pacote = getattr(outs[idx], "pydantic", None)
         if pacote is not None:
-            posts = [
-                {
-                    "plataforma": "facebook",
-                    "texto": pacote.facebook.texto,
-                    "hashtags": pacote.facebook.hashtags,
-                }
-            ]
-            thread = pacote.bluesky.posts
-            for i, texto_bs in enumerate(thread, 1):
-                posts.append(
+            for rv in pacote.videos:
+                print(f"Roteiro de vídeo [{rv.perfil_alvo}] em: {entregaveis.salvar_roteiro_video(rv, tema)}")
+        idx += 1
+    if "redes" in tokens and idx < len(outs):
+        multi = getattr(outs[idx], "pydantic", None)
+        if multi is not None:
+            for item in multi.itens:
+                posts = [
                     {
-                        "plataforma": "bluesky",
-                        "texto": texto_bs,
-                        "hashtags": [],
-                        "nota": f"fio {i}/{len(thread)}",
+                        "plataforma": "facebook",
+                        "texto": item.facebook.texto,
+                        "hashtags": item.facebook.hashtags,
+                        "nota": item.perfil_alvo,
                     }
+                ]
+                thread = item.bluesky.posts
+                for i, texto_bs in enumerate(thread, 1):
+                    posts.append(
+                        {
+                            "plataforma": "bluesky",
+                            "texto": texto_bs,
+                            "hashtags": [],
+                            "nota": f"{item.perfil_alvo} | fio {i}/{len(thread)}",
+                        }
+                    )
+                ids = postagem.add_posts(posts, tema)
+                print(
+                    f"[{item.perfil_alvo}] {len(ids)} posts enfileirados | imagem: "
+                    f"'{item.imagem.titulo}' / '{item.imagem.subtitulo}'"
                 )
-            ids = postagem.add_posts(posts, tema)
-            print(f"{len(ids)} posts enfileirados (rascunho): {', '.join(ids)}")
-            print(
-                f"Imagem (Canva) — título: '{pacote.imagem.titulo}' | "
-                f"subtítulo: '{pacote.imagem.subtitulo}'"
-            )
-            print(f"Pacote de redes salvo em: {entregaveis.salvar_pacote_redes(pacote, tema)}")
+                print(f"  pacote de redes: {entregaveis.salvar_pacote_redes(item, tema)}")
         idx += 1
     if "reportagem" in tokens and idx < len(outs):
         rep = getattr(outs[idx], "pydantic", None)

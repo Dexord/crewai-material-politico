@@ -218,14 +218,18 @@ mesmo primeiro/último.
 Export-only (sem auto-post). Com `run --saidas video,redes,reportagem` (ou `todas`), o crew
 ganha agentes especializados (5o/6o/7o) que partem da versao aprovada pelo revisor:
 
-- **Roteirista de Video Curto** (`video`): roteiro de ~1m30s com gancho, cenas cronometradas
-  (narracao + texto de tela) e CTA. Schema `RoteiroVideo` (`src/output/entregaveis.py`).
-- **Copywriter de Redes** (`redes`): post de **Facebook** + **fio do Bluesky** (1–4 posts,
-  com link em cada post quando houver) + **título/subtítulo de imagem** (Canva). Schema
-  `PacoteRedes`; os posts viram peças na fila de postagem e o pacote (com a imagem) vai para
-  `data/output/entregaveis/`.
+- **Roteirista de Video Curto** (`video`): roteiro de ~1m30s **por perfil** (5 roteiros, um por
+  manchete/perfil) com gancho, cenas cronometradas (narracao + texto de tela) e CTA. Schema
+  `PacoteVideos` (`src/output/entregaveis.py`).
+- **Copywriter de Redes** (`redes`): **um item por perfil** — post de **Facebook** + **fio do
+  Bluesky** (1–4 posts, com link em cada) + **título/subtítulo de imagem** (Canva). Schema
+  `PacoteRedesMulti`; os posts viram peças na fila de postagem (com o perfil na `nota`) e o
+  pacote (com a imagem) vai para `data/output/entregaveis/`.
 - **Redator Jornalista** (`reportagem`): **reportagem/noticia** extensa (titulo, linha fina,
   lide, corpo em markdown com secoes). Schema `Reportagem`.
+
+As 5 manchetes do `run` sao **uma por perfil demografico** (o roteirista recebe `profiles.yaml`
+e o revisor garante a cobertura dos 5 perfis).
 
 Saidas em `data/output/entregaveis/` (video, reportagem) e na fila de postagem
 `data/output/fila-postagem.json` + `data/output/postagens/<id>.txt` (ciclo
