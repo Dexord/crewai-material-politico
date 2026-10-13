@@ -7,6 +7,7 @@ from .tools.vault_tools import (
     consultar_fila,
     consultar_grafo,
     ler_nota,
+    listar_dangling,
     registrar_vinculo,
     relacionar,
     salvar_organizacao,
@@ -43,6 +44,7 @@ def build_investigador_crew(settings: Settings, step_callback=None) -> Crew:
             consultar_grafo,
             adicionar_fila,
             consultar_fila,
+            listar_dangling,
         ],
         llm=llm,
         verbose=True,
@@ -75,7 +77,13 @@ def build_investigador_crew(settings: Settings, step_callback=None) -> Crew:
             "grave ou lesao ao patrimonio publico ligado a familia; 4 = pessoa/empresa "
             "central, citada com fonte forte; 3 = relevante (USE 3 se nao tiver certeza); "
             "2 = contexto; 1 = tangencial.\n"
-            "5. Use consultar_grafo e consultar_fila para identificar lacunas do grafo."
+            "5. APROFUNDE O GRAFO pelas lacunas: use `listar_dangling` para achar alvos "
+            "citados (pessoas/instituicoes) que ainda NAO tem nota. Escolha os mais "
+            "relevantes (mais citados / ligados ao tema) e enfileire-os como SEMENTES "
+            "(`adicionar_fila` com profundidade=0, motivo e prioridade pela rubrica), "
+            "entre 5 e 15 por vez (nao inunde a fila). Filtre ruido (nao enfileire nomes "
+            "genericos).\n"
+            "6. Use consultar_grafo e consultar_fila para identificar lacunas do grafo."
         ),
         agent=investigador,
         expected_output=(

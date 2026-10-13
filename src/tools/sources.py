@@ -93,3 +93,51 @@ def read_active_rss(max_items: int = 10) -> str:
         return "Nenhum feed RSS ativo configurado em config/sources.yaml."
     blocks = [_feed_to_markdown(s["nome"], s["url"], max_items) for s in rss]
     return "\n\n".join(blocks)
+
+
+def _clean_summary(text: str) -> str:
+    if not text:
+        return ""
+    limpo = BeautifulSoup(text, "lxml").get_text(" ", strip=True)
+    return " ".join(limpo.split())[:400]
+
+
+def carregar_itens_rss(max_items: int = 15) -> list[dict]:
+    cfg = load_sources()
+    itens: list[dict] = []
+    for s in _active(cfg.get("rss", [])):
+        try:
+            feed = feedparser.parse(s["url"])
+        except Exception:  # noqa: BLE001
+            continue
+        for entry in feed.entries[:max_items]:
+            itens.append(
+                {
+                    "fonte": s.get("nome", ""),
+                    "titulo": entry.get("title", ""),
+                    "link": entry.get("link", ""),
+                    "resumo": _clean_summary(entry.get("summary", "")),
+                }
+            )
+    return itens
+
+
+def filtrar_relevantes(itens: list[dict], nomes: list[str], min_tokens: int = 2) -> list[dict]:
+    from ..vault.vault import normalize
+
+    refs: list[tuple[str, str]] = []
+    for nome in nomes:
+        nn = normalize(nome).strip()
+        if len(nn) >= 6 and len(nn.split()) >= min_tokens:
+            refs.append((nome, nn))
+    if not refs:
+        return []
+    out: list[dict] = []
+    for item in itens:
+        texto = normalize(f"{item.get('titulo', '')} {item.get('resumo', '')}")
+        matched = sorted({orig for orig, nn in refs if nn in texto})
+        if matched:
+            novo = dict(item)
+            novo["entidades"] = matched
+            out.append(novo)
+    return out

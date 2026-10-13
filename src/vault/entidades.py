@@ -36,6 +36,10 @@ def chaves_entidades() -> set[str]:
     return {chave(fm.get("nome") or "") for fm in _entidades()}
 
 
+def nomes_entidades() -> list[str]:
+    return [fm.get("nome") for fm in _entidades() if fm.get("nome")]
+
+
 def coberto(nome: str, refs: set[str] | None = None) -> bool:
     at = chave(nome).split()
     if not at:

@@ -12,6 +12,7 @@ if sys.stderr and hasattr(sys.stderr, "reconfigure"):
 from .config import get_settings
 from .crew import build_crew
 from .crew_investigador import build_investigador_crew
+from .crew_pautas import build_pautas_crew
 from .crew_pesquisador import build_pesquisador_crew
 from .output import entregaveis, postagem
 from .output.render import save_output
@@ -245,6 +246,38 @@ def _daemon(settings, horas: float, lote: int) -> int:
     return 0
 
 
+def _render_noticias(itens: list[dict]) -> str:
+    linhas = []
+    for i, item in enumerate(itens, 1):
+        linhas.append(f"{i}. [{item.get('fonte', '')}] {item.get('titulo', '')}")
+        linhas.append(f"   link: {item.get('link', '')}")
+        if item.get("entidades"):
+            linhas.append(f"   entidades do grafo: {', '.join(item['entidades'])}")
+        if item.get("resumo"):
+            linhas.append(f"   resumo: {item['resumo'][:250]}")
+    return "\n".join(linhas)
+
+
+def pautas() -> int:
+    settings = get_settings()
+    from .tools.sources import carregar_itens_rss, filtrar_relevantes
+    from .vault.entidades import nomes_entidades
+
+    itens = carregar_itens_rss()
+    relevantes = filtrar_relevantes(itens, nomes_entidades())
+    if not relevantes:
+        print("Nenhuma manchete relevante nas fontes agora.")
+        return 0
+    print(f"[{_ts()}] {len(relevantes)} manchete(s) relevante(s); gerando pautas...", flush=True)
+    crew = build_pautas_crew(settings, step_callback=_step_cb)
+    result = crew.kickoff(inputs={"noticias": _render_noticias(relevantes)})
+    text = getattr(result, "raw", str(result))
+    print(text)
+    path = save_output(text, settings.output_dir, "pautas")
+    print(f"\nPautas salvas em: {path}")
+    return 0
+
+
 def agenda(status: str = "") -> int:
     pecas = postagem.list_pecas(status or None)
     if not pecas:
@@ -337,6 +370,8 @@ def main() -> int:
 
     sub.add_parser("investigar", help="Estrutura o vault e mantem a fila de pesquisa")
 
+    sub.add_parser("pautas", help="Gera pautas a partir das manchetes atuais dos RSS")
+
     p_pesq = sub.add_parser("pesquisar", help="Consome a fila de pesquisa")
     p_pesq.add_argument("--limite", type=int, default=0, help="Itens a processar (0 = esvaziar)")
     p_pesq.add_argument("--horas", type=float, default=0.0, help="Roda como daemon por N horas")
@@ -383,6 +418,8 @@ def main() -> int:
         return run(args.tema, args.saidas)
     if args.comando == "investigar":
         return investigar()
+    if args.comando == "pautas":
+        return pautas()
     if args.comando == "pesquisar":
         return pesquisar(args.limite, args.horas, args.lote)
     if args.comando == "enfileirar":

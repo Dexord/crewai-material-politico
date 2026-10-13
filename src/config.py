@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     output_dir: str = "data/output"
     scrape_rate_limit: float = 1.5
     vault_dir: str = "data/vault"
-    max_depth: int = 2
+    max_depth: int = 3
     blacklist_alvos: str = "Flavio Bolsonaro"
 
 

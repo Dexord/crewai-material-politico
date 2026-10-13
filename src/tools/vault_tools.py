@@ -368,6 +368,28 @@ def consultar_grafo(id: str) -> str:
     )
 
 
+@tool("listar_dangling")
+def listar_dangling(limite: int = 40) -> str:
+    """Lista alvos (pessoas/instituicoes) citados no grafo SEM nota — lacunas a pesquisar.
+
+    Ordenado por centralidade (numero de notas que citam o alvo). Use para enfileirar
+    alvos como SEMENTES (profundidade 0) e aprofundar o grafo.
+
+    Args:
+        limite: Quantidade maxima de alvos (padrao 40).
+
+    Returns:
+        Lista de alvos sem nota, com id e numero de citacoes.
+    """
+    alvos = graph_index.dangling(limite)
+    if not alvos:
+        return "Nenhum alvo citado sem nota."
+    lines = [
+        f"- {a['nome']} (id: {a['id']}) — citado em {a['citacoes']} notas" for a in alvos
+    ]
+    return "Alvos citados sem nota (candidatos a pesquisa como semente):\n" + "\n".join(lines)
+
+
 @tool("adicionar_fila")
 def adicionar_fila(
     alvo: str, motivo: str, prioridade: int = 3, profundidade: int = 0, origem: str = ""

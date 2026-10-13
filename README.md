@@ -29,7 +29,10 @@ cabeça": cada afirmação precisa de uma `source_url`.
   demográfico) → roteirista → revisor (gate de fato e de enquadramento).
 - **Grafo de conhecimento** em arquivos Markdown com links `[[wikilinks]]` (abre no
   Obsidian). Guarda notícias, fatos, pessoas e organizações com **fonte** em cada relação.
-- **Agente investigador** que liga pessoas/instituições e mantém uma **fila de pesquisa**.
+- **Agente investigador** que liga pessoas/instituições, mantém uma **fila de pesquisa** e
+  **aprofunda o grafo** enfileirando alvos citados que ainda não têm nota (sementes).
+- **Criador de Pauta**: cruza as **manchetes atuais dos RSS** com o grafo e propõe pautas
+  (manchete + ângulo + fonte).
 - **Loop autônomo** (ex.: por 6 horas) que alterna investigar e pesquisar sozinho.
 - **Entregáveis extras** (opcionais, com `--saidas`): **roteiro de vídeo curto** (~1m30s),
   **posts para Facebook e Bluesky** e uma **reportagem/notícia** extensa — além da **fila de
@@ -191,6 +194,7 @@ uv run python -m src.main publicar <id>          # aprovado -> publicado
 uv run python -m src.main investigar             # estrutura o vault + monta a fila
 uv run python -m src.main pesquisar --limite 10  # pesquisa 10 itens da fila
 uv run python -m src.main enfileirar "Banco Master" --prioridade 5 --motivo "caso"
+uv run python -m src.main pautas                 # pautas a partir das manchetes atuais dos RSS
 ```
 
 ### 6.4 Loop autônomo (rodar sozinho por horas)

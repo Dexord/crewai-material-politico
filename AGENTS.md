@@ -40,6 +40,7 @@ uv run python -m src.main run --tema "<tema>"
 uv run python -m src.main investigar             # estrutura o vault + mantem a fila
 uv run python -m src.main pesquisar --limite N   # consome a fila (0 = esvazia)
 uv run python -m src.main enfileirar "<alvo>" [--motivo "..."] [--prioridade 3]
+uv run python -m src.main pautas                 # pautas a partir das manchetes atuais dos RSS
 
 # Limpeza da fila de pesquisa (dry-run por padrao): itens ja pesquisados/duplicados
 uv run python -m src.main fila-limpar [--aplicar]
@@ -147,6 +148,18 @@ maior a chance de escândalo sério / possível crime (legislação brasileira) 
 família Bolsonaro, maior a prioridade (5 = crime grave/lesão ao erário ligado à família;
 4 = pessoa/empresa central com fonte forte; 3 = relevante; 2 = contexto; 1 = tangencial).
 `next_item` ordena por prioridade desc → profundidade asc → mais antigo.
+
+Aprofundamento do grafo: o investigador usa `listar_dangling` (alvos citados **sem nota**,
+ordenados por centralidade) e os enfileira como **sementes** (`profundidade 0`). Assim o grafo
+cresce em largura e profundidade mesmo quando a expansão "nome em nome" satura.
+
+### Criador de Pauta (`pautas`) — gatilho por notícia
+
+Comando `pautas`: lê os **RSS** de `config/sources.yaml`, filtra **deterministicamente** as
+manchetes que **citam entidades do grafo** (`sources.filtrar_relevantes`) e roda um agente
+**Criador de Pauta** (`src/crew_pautas.py`) que cruza com o grafo e propõe até 8 pautas
+(manchete + ângulo + entidades + `source_url`). Saída em `data/output/`. Complementa o fluxo
+proativo (grafo) com material **fresco** do noticiário.
 
 Vault em `data/vault/` (Obsidian): `log/`, `noticias/`, `fatos/`, `pessoas/`, `organizacoes/`,
 `temas/`, `fila/`. Toda nota tem frontmatter YAML + `[[wikilinks]]` (Graph View do Obsidian).
@@ -267,7 +280,7 @@ OLLAMA_MODEL=qwen3.5:9b
 OUTPUT_DIR=data/output
 SCRAPE_RATE_LIMIT=1.5
 VAULT_DIR=data/vault
-MAX_DEPTH=2
+MAX_DEPTH=3
 BLACKLIST_ALVOS=Flavio Bolsonaro
 ```
 
@@ -343,6 +356,9 @@ rejeitados/ignorados. O contexto é controlado **do lado do Ollama**:
   consulta o grafo, revisor cita por referência; `buscar_notas` ranqueado por campo.
 - **F3 (feito):** export por plataforma (Facebook/TikTok) via agente redator com saída
   estruturada, fila de postagem local com ciclo de status. Export-only, sem auto-post.
+- **F4 (feito):** aprofundamento do grafo via `listar_dangling` (investigador enfileira alvos
+  sem nota como sementes; `MAX_DEPTH=3`) e **Criador de Pauta** (`pautas`) a partir das
+  manchetes dos RSS.
 - **Futuro:** auto-post via APIs (Meta/TikTok), `.ics`/Task Scheduler; embeddings
   (`fastembed`) se a busca semântica virar necessidade.
 
