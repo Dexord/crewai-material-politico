@@ -271,26 +271,45 @@ MAX_DEPTH=2
 BLACKLIST_ALVOS=Flavio Bolsonaro
 ```
 
-## 9. Contexto do modelo (importante)
+## 9. Contexto e desempenho do Ollama (importante)
 
 O endpoint **OpenAI-compatível** do Ollama (usado pelo crewAI nativo) **não aceita
 `num_ctx`** por requisição — `num_ctx`, `extra_body.options` e `context_window_size` são
-rejeitados/ignorados. Portanto o contexto é controlado **do lado do Ollama**:
+rejeitados/ignorados. O contexto é controlado **do lado do Ollama**:
 
-- `ollama ps` mostra o CONTEXT efetivo (hoje o modelo carrega por volta de 16384).
-- Para aumentar, no Windows:
-  ```powershell
-  [Environment]::SetEnvironmentVariable("OLLAMA_CONTEXT_LENGTH","32768","User")
-  # sair do Ollama (bandeja) e abrir de novo
-  ```
-  ou via Modelfile:
-  ```
-  FROM qwen3.5:9b
-  PARAMETER num_ctx 32768
-  ```
-  `ollama create qwen3.5-32k -f Modelfile` e depois ajustar `OLLAMA_MODEL` no `.env`.
-- Limite prático: RX 6700 XT = 12 GB. `ollama ps` deve manter `PROCESSOR=100% GPU`;
-  se cair para CPU, reduza o `num_ctx`.
+- `ollama ps` mostra o CONTEXT efetivo (usamos **32768**).
+- No Windows: `[Environment]::SetEnvironmentVariable("OLLAMA_CONTEXT_LENGTH","32768","User")`
+  e **reinicie o Ollama** (bandeja → Quit → abrir). Mudar env **sem reiniciar não tem efeito**
+  (o servidor já roda com o ambiente antigo). Alternativa: Modelfile com `PARAMETER num_ctx`.
+- **KV cache / spill para RAM**: cada contexto carregado ocupa VRAM como cache de prompt/KV.
+  Numa RX 6700 XT (12 GB) com modelo de ~7.7 GB, contextos grandes (64k/128k) + vários prompts
+  em cache **estouram a VRAM** e o Ollama **derrama para a RAM** (RAM alta, CPU trabalhando,
+  `PROCESSOR` cai de `100% GPU`). `ollama ps` deve manter `PROCESSOR=100% GPU`.
+- **Recomendação: usar 32k.** Os prompts são enxutos (ver abaixo) e cabem folgado; 64k+ tende a
+  derramar e **não** compensa nesta placa.
+- **Qwen3.5 é híbrido/recurrente** (SWA/atenção linear): quando o cache é invalidado, o
+  llama.cpp **reprocessa o prompt inteiro** (`forcing full prompt re-processing`). Por isso
+  prompts grandes encarecem muito — mantenha-os curtos.
+
+### Enxugamento de contexto (para não estourar)
+
+- `buscar_notas` retorna no máx **8** notas (só id/título/score).
+- `ler_nota` **trunca** o corpo (~2000 chars) e **corta a seção "Mencionado em"** (a que mais
+  infla). Para a nota inteira, abra no Obsidian.
+- Pesquisadores do `run` e do daemon com **`max_iter=15`** (evita loop ReAct inflando o prompt).
+- **Nunca** rode o daemon (`pesquisar`) e o `run` ao mesmo tempo: disputam o mesmo modelo/slot.
+
+### Paralelismo (`OLLAMA_NUM_PARALLEL` x `OLLAMA_MAX_LOADED_MODELS`)
+
+- `OLLAMA_MAX_LOADED_MODELS` = quantos **modelos diferentes** ficam carregados. `0` = **auto**
+  (o Ollama decide pela VRAM; 12 GB com um modelo de 7.7 GB → resolve para 1). Com **um**
+  modelo, deixe em auto/1 — **não** precisa aumentar para paralelizar.
+- `OLLAMA_NUM_PARALLEL` = quantos **slots** do **mesmo** modelo atendem requisições simultâneas
+  (default 1). Para 2 requisições ao mesmo tempo, é isso que muda.
+- Com um modelo, os **pesos são compartilhados** (carregam uma vez); o que é **por slot** é o
+  **KV cache/contexto**. Cada slot extra **dobra o KV** → nesta placa, 2 slots com 32k+ tende a
+  derramar pra RAM. Paralelizar só compensa com `num_ctx` bem menor (16k) ou modelo menor.
+- Mudar `NUM_PARALLEL`/`MAX_LOADED_MODELS` também exige **reiniciar o Ollama**.
 
 ## 10. Problemas conhecidos
 

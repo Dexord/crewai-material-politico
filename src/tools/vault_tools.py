@@ -27,6 +27,28 @@ def _link(note_id: str) -> str:
     return f"[[{note_id}]]"
 
 
+def _compact_fm(fm: dict, max_menc: int = 5) -> dict:
+    out = dict(fm)
+    menc = out.get("mencionado_em")
+    if isinstance(menc, list) and len(menc) > max_menc:
+        out["mencionado_em"] = menc[:max_menc] + [f"... (+{len(menc) - max_menc})"]
+    return out
+
+
+def _compact_body(body: str, max_chars: int = 2000) -> str:
+    marcador = "## Mencionado em"
+    if marcador in body:
+        antes, _, depois = body.partition(marcador)
+        total = sum(1 for l in depois.splitlines() if l.strip().startswith("- "))
+        body = (
+            antes.rstrip()
+            + f"\n\n{marcador}\n- ({total} referencias omitidas; abra a nota no vault)\n"
+        )
+    if len(body) > max_chars:
+        body = body[:max_chars] + "\n..."
+    return body
+
+
 def _resolve_id(nome: str, guess_tipo: str = "pessoa") -> str:
     nome = str(nome).strip()
     nome = nome[2:-2] if nome.startswith("[[") and nome.endswith("]]") else nome
@@ -299,7 +321,7 @@ def ler_nota(id: str) -> str:
     if not found:
         return f"Nota nao encontrada: {id}"
     fm, body = found
-    return f"# frontmatter\n{fm}\n\n# corpo\n{body}"
+    return f"# frontmatter\n{_compact_fm(fm)}\n\n# corpo\n{_compact_body(body)}"
 
 
 @tool("buscar_notas")
@@ -315,7 +337,7 @@ def buscar_notas(termo: str, tipo: str = "") -> str:
     """
     from ..vault.vault import search_notes
 
-    hits = search_notes(termo, tipo or None)
+    hits = search_notes(termo, tipo or None, limite=8)
     if not hits:
         return f"Nenhuma nota encontrada para: {termo}"
     lines = [

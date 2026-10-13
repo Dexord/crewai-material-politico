@@ -37,7 +37,13 @@ TOM_ENQUADRAMENTO = (
     "retirada, uma contradicao documentada).\n"
     "- PROIBIDO usar materia de fact-check/desmentido ('e fake', 'e falso', 'boato', "
     "'G1 confirma que nao') como base — essas materias geralmente DEFENDEM ele e "
-    "invertem o enquadramento para o lado dele.\n\n"
+    "invertem o enquadramento para o lado dele.\n"
+    "- NUNCA cite fontes internas ('o Vault', 'o banco de dados', 'as notas'); as unicas "
+    "fontes publicaveis sao as materias/URLs. Escreva o fato direto, nunca 'o Vault mostra'.\n"
+    "- Cada manchete precisa ter vinculo com Flavio Bolsonaro, a familia Bolsonaro, ou "
+    "pessoas proximas do partido e amigos; se o fato nao conecta a nenhum deles, troque por "
+    "outra pauta. Esse vinculo precisa estar na FONTE — NUNCA invente ligacao.\n"
+    "- Use POUCOS emojis (no maximo 1 por peca, opcional), para nao parecer texto feito por IA.\n\n"
     "Exemplos (ilustrativos):\n"
     "- RUIM: \"Flavio critica PEC e diz que Lula e oportunista\" (foca na opiniao dele; neutro)\n"
     "- BOM: \"7 anos, 433 projetos, 2 aprovados — e nenhum virou lei\"\n"
@@ -46,7 +52,7 @@ TOM_ENQUADRAMENTO = (
 )
 
 
-def build_crew(settings: Settings, saidas: list[str] | None = None) -> Crew:
+def build_crew(settings: Settings, saidas: list[str] | None = None, step_callback=None) -> Crew:
     llm_preciso = LLM(
         model=f"ollama/{settings.ollama_model}",
         base_url=settings.ollama_base_url,
@@ -92,6 +98,7 @@ def build_crew(settings: Settings, saidas: list[str] | None = None) -> Crew:
             salvar_noticia,
         ],
         llm=llm_preciso,
+        max_iter=15,
         verbose=True,
         allow_delegation=False,
     )
@@ -167,7 +174,9 @@ def build_crew(settings: Settings, saidas: list[str] | None = None) -> Crew:
             "source_url). Registre falhas de acesso em vez de inventar.\n"
             "6. Priorize fatos com NUMERO, DATA, VOTACAO ou CONTRADICAO entre discurso e "
             "pratica. Ausencia de informacao NAO e fato: se o tema tiver poucos resultados, "
-            "tente termos alternativos (siglas, anos, numeros de projeto)."
+            "tente termos alternativos (siglas, anos, numeros de projeto).\n"
+            "7. Use PELO MENOS 2 fontes diferentes (idealmente 3 ou mais) para sustentar o "
+            "dossie; nunca apoie o material em uma unica materia."
         ),
         agent=pesquisador,
         expected_output=(
@@ -204,9 +213,15 @@ def build_crew(settings: Settings, saidas: list[str] | None = None) -> Crew:
             "impactantes e engajantes que elucidem um problema concreto ligado a acoes ou "
             "promessas de Flavio Bolsonaro.\n\n"
             f"{TOM_ENQUADRAMENTO}\n"
-            "Se o dossie nao tiver 5 fatos fortes distintos, varie o ANGULO/PERFIL sobre "
-            "os fatos mais fortes — nunca preencha com argumento de ausencia nem com "
-            "desmentido.\n"
+            "Regras das 5 manchetes:\n"
+            "- As 5 devem tratar de FATOS DIFERENTES entre si. NUNCA repita o mesmo fato/"
+            "angulo (nem uma variacao dele) em duas manchetes; se faltar, use outro fato "
+            "do dossie — mas o FATO destacado tem que mudar.\n"
+            "- Cada manchete: NO MAXIMO 12 palavras (conte antes de entregar).\n"
+            "- PROIBIDO premissa inventada ('o dinheiro deveria ter ido para X', 'nao foi "
+            "para Y') — use apenas o que a fonte afirma.\n"
+            "- PROIBIDO enquadramento que o absolva ou sugira que ele e limpo / que 'so e "
+            "investigado em um caso'.\n"
             "Para cada manchete, entregue:\n"
             "- Perfil-alvo (do ranking do analista)\n"
             "- Manchete (curta, ate 12 palavras, pronta para Facebook/TikTok)\n"
@@ -227,6 +242,11 @@ def build_crew(settings: Settings, saidas: list[str] | None = None) -> Crew:
             "Revise o material do roteirista comparando cada afirmacao com o dossie e com "
             "as notas do vault (ler_nota/buscar_notas); se necessario, confirme na web "
             "(buscar_na_web / extrair_markdown).\n\n"
+            "Regras de ADERENCIA:\n"
+            "- Cada manchete tem que ter a ver com o TEMA: {tema}.\n"
+            "- Cada manchete tem que tocar em alguma DOR ou gatilho de um dos perfis abaixo; "
+            "se nao tocar, reescreva ou troque por outra pauta do dossie.\n\n"
+            f"{profiles_as_markdown()}\n\n"
             "Regras de fato:\n"
             "- Se uma afirmacao nao tiver fonte que a sustente, remova ou reescreva para "
             "algo sustentado.\n"
@@ -241,9 +261,23 @@ def build_crew(settings: Settings, saidas: list[str] | None = None) -> Crew:
             "(ex: 'Flavio critica X', 'Flavio defende Y'), REESCREVA para a consequencia/"
             "problema, SEM inventar fato novo.\n"
             "- Rejeite manchete cujo teor DEFENDA/ABSOLVA ele (ex: 'e fake que ele propos X', "
-            "'G1 confirma que e boato'). Substitua por um fato afirmativo do dossie.\n"
+            "'denuncia foi rejeitada', 'foi absolvido', 'investigacao arquivada'). Enquadre o "
+            "PROBLEMA, nao a 'vitoria' dele. Substitua por um fato afirmativo do dossie.\n"
+            "- Rejeite citacao a fontes internas ('o Vault', 'o banco de dados', 'as notas'); "
+            "as fontes publicaveis sao apenas as materias/URLs.\n"
+            "- Cada manchete precisa ter vinculo com Flavio Bolsonaro, a familia Bolsonaro, ou "
+            "pessoas proximas do partido e amigos; sem isso, troque a pauta.\n"
+            "- REJEITE qualquer ligacao a Flavio/familia/governo que a FONTE nao sustente "
+            "(ex.: 'igreja sob gestao de Flavio' quando a materia nao diz isso). O vinculo "
+            "tem que estar na fonte.\n"
             "- Se nao houver fato suficiente para um enquadramento forte, substitua a pauta "
-            "por outra do dossie ou varie o angulo sobre os fatos mais fortes.\n\n"
+            "por outra do dossie ou varie o angulo sobre os fatos mais fortes.\n"
+            "- REJEITE manchetes repetidas: as 5 precisam tratar de FATOS distintos; "
+            "substitua as repetidas por outro fato do dossie.\n"
+            "- REJEITE premissa inventada e enquadramento que o absolva/sugira que ele e "
+            "limpo ou 'so investigado em um caso'.\n"
+            "- Corrija erros obvios de ortografia/gramatica (ex.: 'imparidade' -> "
+            "'imparcialidade').\n\n"
             "Entregue a versao final PRIMEIRO (as 5 manchetes com roteiro e fonte), e so "
             "depois, como apendice, a tabela de validacao com as colunas: Afirmacao | "
             "Referencia (id da nota no vault e/ou source_url) | Status."
@@ -372,4 +406,5 @@ def build_crew(settings: Settings, saidas: list[str] | None = None) -> Crew:
         tasks=tasks,
         process=Process.sequential,
         verbose=True,
+        step_callback=step_callback,
     )

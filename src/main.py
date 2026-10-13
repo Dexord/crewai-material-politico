@@ -30,8 +30,10 @@ def run(tema: str, saidas: str = "") -> int:
         tokens = ["video", "redes", "reportagem"]
     tokens = [t for t in tokens if t in ("video", "redes", "reportagem")]
 
-    crew = build_crew(settings, tokens or None)
+    print(f"[{_ts()}] run: tema={tema!r} saidas={tokens or 'nenhuma'}", flush=True)
+    crew = build_crew(settings, tokens or None, step_callback=_step_cb)
     result = crew.kickoff(inputs={"tema": tema})
+    print(f"[{_ts()}] kickoff concluido; processando saidas", flush=True)
     outs = getattr(result, "tasks_output", []) or []
 
     revisao = outs[3] if len(outs) > 3 else None

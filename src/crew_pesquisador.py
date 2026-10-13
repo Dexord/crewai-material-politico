@@ -53,6 +53,7 @@ def build_pesquisador_crew(settings: Settings, step_callback=None) -> Crew:
             buscar_notas,
         ],
         llm=llm,
+        max_iter=15,
         verbose=True,
         allow_delegation=False,
     )
@@ -64,7 +65,9 @@ def build_pesquisador_crew(settings: Settings, step_callback=None) -> Crew:
             "Profundidade atual na arvore de pesquisa: {profundidade} "
             "(maximo permitido: {max_depth}).\n\n"
             "Passos:\n"
-            "1. Use buscar_na_web e/ou ler_rss_ativos para levantar material sobre o alvo.\n"
+            "1. Use buscar_na_web e/ou ler_rss_ativos para levantar material sobre o alvo. "
+            "Use pelo menos 2 fontes diferentes (idealmente 3+) sempre que possivel; nunca "
+            "apoie o alvo em uma unica materia.\n"
             "2. Use extrair_markdown para ler as paginas mais relevantes.\n"
             "3. salvar_fato para cada fato (com fonte) e salvar_noticia para materias relevantes.\n"
             "4. Nomes de PESSOAS e INSTITUICOES sao prioritarios:\n"
