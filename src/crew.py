@@ -38,12 +38,14 @@ TOM_ENQUADRAMENTO = (
     "- PROIBIDO usar materia de fact-check/desmentido ('e fake', 'e falso', 'boato', "
     "'G1 confirma que nao') como base — essas materias geralmente DEFENDEM ele e "
     "invertem o enquadramento para o lado dele.\n"
+    "- PROIBIDO enquadramento INVERTIDO: nao use acao que PROTEGE/BENEFICIA ele (ex.: 'TSE "
+    "retira post CONTRA o Flavio'). Cada manchete aponta um PROBLEMA concreto dele.\n"
     "- NUNCA cite fontes internas ('o Vault', 'o banco de dados', 'as notas'); as unicas "
     "fontes publicaveis sao as materias/URLs. Escreva o fato direto, nunca 'o Vault mostra'.\n"
     "- Cada manchete precisa ter vinculo com Flavio Bolsonaro, a familia Bolsonaro, ou "
     "pessoas proximas do partido e amigos; se o fato nao conecta a nenhum deles, troque por "
     "outra pauta. Esse vinculo precisa estar na FONTE — NUNCA invente ligacao.\n"
-    "- Use POUCOS emojis (no maximo 1 por peca, opcional), para nao parecer texto feito por IA.\n\n"
+    "- Use NO MAXIMO 1 emoji por peca (idealmente nenhum); excesso de emoji tem cara de texto de IA.\n\n"
     "Exemplos (ilustrativos):\n"
     "- RUIM: \"Flavio critica PEC e diz que Lula e oportunista\" (foca na opiniao dele; neutro)\n"
     "- BOM: \"7 anos, 433 projetos, 2 aprovados — e nenhum virou lei\"\n"
@@ -59,12 +61,12 @@ def build_crew(settings: Settings, saidas: list[str] | None = None, step_callbac
         temperature=0.1,
     )
     llm_analista = LLM(
-        model=f"ollama/{settings.ollama_model}",
+        model=f"ollama/{settings.ollama_model_escrita}",
         base_url=settings.ollama_base_url,
         temperature=0.3,
     )
     llm_criativo = LLM(
-        model=f"ollama/{settings.ollama_model}",
+        model=f"ollama/{settings.ollama_model_escrita}",
         base_url=settings.ollama_base_url,
         temperature=0.7,
     )
@@ -162,9 +164,10 @@ def build_crew(settings: Settings, saidas: list[str] | None = None, step_callbac
         description=(
             "Pesquise o tema: {tema}.\n\n"
             "Passos:\n"
-            "1. Consulte PRIMEIRO o vault pelo tema: use buscar_notas e ler_nota para ver "
-            "o que ja foi pesquisado (reaproveite e nao refaca trabalho). Use "
-            "consultar_grafo se quiser ver entidades ja ligadas ao tema.\n"
+            "1. O dossie DEVE tratar do TEMA especificamente. Pesquise o tema na web "
+            "(buscar_na_web) e nas fontes (listar_fontes/ler_rss_ativos). Consulte tambem o "
+            "vault (buscar_notas/ler_nota/consultar_grafo) como APOIO/contexto — mas NUNCA "
+            "troque o tema: os fatos tem que ser SOBRE o tema pesquisado.\n"
             "2. Use listar_fontes/ler_rss_ativos para ler os feeds e buscar_na_web para "
             "complementar com materia de portais.\n"
             "3. Use extrair_markdown para baixar e converter as paginas mais relevantes.\n"
@@ -176,7 +179,12 @@ def build_crew(settings: Settings, saidas: list[str] | None = None, step_callbac
             "pratica. Ausencia de informacao NAO e fato: se o tema tiver poucos resultados, "
             "tente termos alternativos (siglas, anos, numeros de projeto).\n"
             "7. Use PELO MENOS 2 fontes diferentes (idealmente 3 ou mais) para sustentar o "
-            "dossie; nunca apoie o material em uma unica materia."
+            "dossie; nunca apoie o material em uma unica materia.\n"
+            "8. FOCO NO ALVO: o material e sobre Flavio Bolsonaro, a familia Bolsonaro ou "
+            "pessoas proximas do partido e amigos. Nao misture casos nao relacionados nem "
+            "invente conexoes entre fatos distintos.\n"
+            "9. NAO troque o tema: mesmo que o vault tenha outros casos, os fatos do dossie "
+            "tem que ser SOBRE o tema pedido."
         ),
         agent=pesquisador,
         expected_output=(
@@ -246,7 +254,8 @@ def build_crew(settings: Settings, saidas: list[str] | None = None, step_callbac
             "as notas do vault (ler_nota/buscar_notas); se necessario, confirme na web "
             "(buscar_na_web / extrair_markdown).\n\n"
             "Regras de ADERENCIA:\n"
-            "- Cada manchete tem que ter a ver com o TEMA: {tema}.\n"
+            "- Cada manchete tem que ser SOBRE o TEMA: {tema}. Se a manchete tratar de outro "
+            "caso (mesmo que seja do Flavio), troque por um fato do TEMA.\n"
             "- Garanta 5 manchetes, UMA por perfil (cubra os 5 perfis); se algum perfil "
             "ficar sem manchete, reescreva/troque para cobri-lo.\n"
             "- Cada manchete tem que tocar em alguma DOR ou gatilho de um dos perfis abaixo; "
@@ -268,6 +277,9 @@ def build_crew(settings: Settings, saidas: list[str] | None = None, step_callbac
             "- Rejeite manchete cujo teor DEFENDA/ABSOLVA ele (ex: 'e fake que ele propos X', "
             "'denuncia foi rejeitada', 'foi absolvido', 'investigacao arquivada'). Enquadre o "
             "PROBLEMA, nao a 'vitoria' dele. Substitua por um fato afirmativo do dossie.\n"
+            "- REJEITE enquadramento INVERTIDO: manchete sobre acao que PROTEGE/BENEFICIA ele "
+            "(ex.: 'TSE retira/anula post CONTRA o Flavio') NAO serve — isso e a favor dele. "
+            "Cada manchete tem que apontar um PROBLEMA concreto do Flavio.\n"
             "- Rejeite citacao a fontes internas ('o Vault', 'o banco de dados', 'as notas'); "
             "as fontes publicaveis sao apenas as materias/URLs.\n"
             "- Cada manchete precisa ter vinculo com Flavio Bolsonaro, a familia Bolsonaro, ou "

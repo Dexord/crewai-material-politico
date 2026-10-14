@@ -134,8 +134,8 @@ def filtrar_relevantes(itens: list[dict], nomes: list[str], min_tokens: int = 2)
         return []
     out: list[dict] = []
     for item in itens:
-        texto = normalize(f"{item.get('titulo', '')} {item.get('resumo', '')}")
-        matched = sorted({orig for orig, nn in refs if nn in texto})
+        titulo = normalize(item.get("titulo", ""))
+        matched = sorted({orig for orig, nn in refs if nn in titulo})
         if matched:
             novo = dict(item)
             novo["entidades"] = matched
