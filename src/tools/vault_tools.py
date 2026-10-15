@@ -77,7 +77,13 @@ def _merge_alias(fm: dict, nome: str) -> None:
 
 @tool("salvar_noticia")
 def salvar_noticia(
-    titulo: str, conteudo: str, fonte: str = "", source_url: str = "", tags: str = "", entidades: str = ""
+    titulo: str,
+    conteudo: str,
+    fonte: str = "",
+    source_url: str = "",
+    tags: str = "",
+    entidades: str = "",
+    data_fato: str = "",
 ) -> str:
     """Salva uma noticia no vault como nota markdown.
 
@@ -88,6 +94,7 @@ def salvar_noticia(
         source_url: URL da materia.
         tags: Tags separadas por virgula.
         entidades: Pessoas/instituicoes separadas por virgula.
+        data_fato: Data do acontecimento (AAAA-MM-DD), quando a materia informar.
 
     Returns:
         O id da nota salva no vault.
@@ -105,6 +112,8 @@ def salvar_noticia(
         "entidades": [_link(e) for e in entity_ids],
         "relacionadas": [],
     }
+    if str(data_fato).strip():
+        fm["data_fato"] = str(data_fato).strip()
     save_note(fm, conteudo)
     registrar_mencao(entity_ids, note_id)
     return f"Noticia salva: {note_id}"
@@ -112,15 +121,16 @@ def salvar_noticia(
 
 @tool("salvar_fato")
 def salvar_fato(
-    afirmacao: str, fonte: str, source_url: str = "", entidades: str = ""
+    afirmacao: str, fonte: str, source_url: str = "", entidades: str = "", data_fato: str = ""
 ) -> str:
     """Salva um fato verificado (afirmacao + fonte) no vault.
 
     Args:
-        afirmacao: O fato, de forma objetiva.
+        afirmacao: O fato, de forma objetiva (de preferencia com a DATA dentro do texto).
         fonte: Fonte que sustenta o fato.
         source_url: URL da fonte.
         entidades: Pessoas/instituicoes envolvidas, separadas por virgula.
+        data_fato: Data do acontecimento (AAAA-MM-DD), quando a fonte informar.
 
     Returns:
         O id da nota de fato.
@@ -137,6 +147,8 @@ def salvar_fato(
         "entidades": [_link(e) for e in entity_ids],
         "relacionadas": [],
     }
+    if str(data_fato).strip():
+        fm["data_fato"] = str(data_fato).strip()
     save_note(fm, afirmacao)
     registrar_mencao(entity_ids, note_id)
     return f"Fato salvo: {note_id}"

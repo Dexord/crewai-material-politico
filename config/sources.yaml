@@ -7,16 +7,145 @@ search:
   region: "br-pt"
   max_results: 8
 
+# Limites de leitura dos feeds (usados por ler_rss_ativos e pelo comando pautas).
+# limite_por_feed: itens mais recentes lidos de cada feed.
+# limite_total: teto de itens no total (0 = sem teto). O corte e "round-robin",
+# entao todos os feeds contribuem antes de qualquer um repetir.
+rss_cfg:
+  limite_por_feed: 5
+  limite_total: 60
+
 # Feeds RSS. Coloque "ativo: false" para desligar sem remover.
 rss:
-  - nome: "Agencia Brasil"
-    url: "https://agenciabrasil.ebc.com.br/rss/ultimasnoticias/feed.xml"
+  # --- mainstream: politica/economia/justica ---
+  - nome: "G1 Politica"
+    url: "https://g1.globo.com/rss/g1/politica/"
+    ativo: true
+  - nome: "G1 Rio de Janeiro"
+    url: "https://g1.globo.com/rss/g1/rj/rio-de-janeiro/"
+    ativo: true
+  - nome: "G1 Economia"
+    url: "https://g1.globo.com/rss/g1/economia/"
+    ativo: true
+  - nome: "O Globo Politica"
+    url: "https://oglobo.globo.com/rss/oglobo/politica"
+    ativo: true
+  - nome: "Metropoles"
+    url: "https://www.metropoles.com/feed"
+    ativo: true
+  - nome: "Veja Politica"
+    url: "https://veja.abril.com.br/politica/feed/"
+    ativo: true
+  - nome: "UOL Noticias"
+    url: "https://rss.uol.com.br/feed/noticias.xml"
+    ativo: true
+  - nome: "UOL Economia"
+    url: "https://rss.uol.com.br/feed/economia.xml"
+    ativo: true
+  - nome: "CNN Brasil"
+    url: "https://www.cnnbrasil.com.br/feed/"
+    ativo: true
+  - nome: "Folha Poder"
+    url: "https://feeds.folha.uol.com.br/poder/rss091.xml"
+    ativo: true
+  - nome: "Folha Mercado"
+    url: "https://feeds.folha.uol.com.br/mercado/rss091.xml"
+    ativo: true
+  - nome: "Valor"
+    url: "https://valor.globo.com/rss/valor"
+    ativo: true
+  - nome: "Poder360"
+    url: "https://www.poder360.com.br/feed/"
+    ativo: true
+  - nome: "Congresso em Foco"
+    url: "https://congressoemfoco.com.br/feed/"
+    ativo: true
+  - nome: "Correio Braziliense"
+    url: "https://www.correiobraziliense.com.br/feed/"
+    ativo: true
+  - nome: "El Pais Brasil"
+    url: "https://feeds.elpais.com/mrss-s/pages/ep/site/brasil.elpais.com/portada"
+    ativo: true
+  - nome: "BBC Brasil"
+    url: "https://feeds.bbci.co.uk/portuguese/rss.xml"
+    ativo: true
+  - nome: "DW Brasil"
+    url: "https://rss.dw.com/rdf/rss-br-all"
+    ativo: true
+  - nome: "Istoe"
+    url: "https://istoe.com.br/feed/"
+    ativo: true
+  - nome: "Nexo"
+    url: "https://www.nexojornal.com.br/rss.xml"
+    ativo: true
+  - nome: "Gazeta do Povo Politica"
+    url: "https://www.gazetadopovo.com.br/feed/rss/politica.xml"
+    ativo: true
+  - nome: "R7"
+    url: "https://feeds.feedburner.com/r7noticias"
+    ativo: true
+
+  # --- investigativo/independente ---
+  - nome: "Brasil de Fato"
+    url: "https://www.brasildefato.com.br/feed"
+    ativo: true
+  - nome: "Revista Forum"
+    url: "https://revistaforum.com.br/feed/"
+    ativo: true
+  - nome: "Diario do Centro do Mundo"
+    url: "https://www.diariodocentrodomundo.com.br/feed/"
+    ativo: true
+  - nome: "CartaCapital"
+    url: "https://www.cartacapital.com.br/feed/"
+    ativo: true
+  - nome: "ICL Noticias"
+    url: "https://iclnoticias.com.br/feed/"
+    ativo: true
+  - nome: "The Intercept Brasil"
+    url: "https://theintercept.com/feed/"
+    ativo: true
+  - nome: "Agencia Publica"
+    url: "https://apublica.org/feed/"
+    ativo: true
+  - nome: "Reporter Brasil"
+    url: "https://reporterbrasil.org.br/feed/"
+    ativo: true
+  - nome: "Sumauma"
+    url: "https://sumauma.com/feed/"
+    ativo: true
+  - nome: "Mongabay Brasil"
+    url: "https://brasil.mongabay.com/feed/"
+    ativo: true
+  - nome: "revista piaui"
+    url: "https://piaui.folha.uol.com.br/feed/"
+    ativo: true
+
+  # --- oficiais/justica ---
+  - nome: "Agencia Brasil Politica"
+    url: "https://agenciabrasil.ebc.com.br/rss/politica/feed.xml"
+    ativo: true
+  - nome: "Agencia Brasil Economia"
+    url: "https://agenciabrasil.ebc.com.br/rss/economia/feed.xml"
     ativo: true
   - nome: "Senado Noticias"
     url: "https://www12.senado.leg.br/noticias/rss"
     ativo: true
-  - nome: "G1"
-    url: "https://g1.globo.com/rss/g1/"
+  - nome: "STF Noticias"
+    url: "https://noticias.stf.jus.br/feed/"
+    ativo: true
+
+  # --- monitoramento (linha editorial partidaria) ---
+  - nome: "O Antagonista"
+    url: "https://www.oantagonista.com/feed/"
+    ativo: true
+  - nome: "Revista Oeste"
+    url: "https://revistaoeste.com/feed/"
+    ativo: true
+  - nome: "Jovem Pan"
+    url: "https://jovempan.com.br/feed/"
+    ativo: true
+  - nome: "Brasil 247"
+    url: "https://www.brasil247.com/rss"
     ativo: true
 
 # Portais/blogs para scraping direto de pagina (requests + BeautifulSoup).

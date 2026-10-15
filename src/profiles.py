@@ -22,6 +22,8 @@ def profiles_as_markdown() -> str:
         objecoes = p.get("objeções") or p.get("objecoes") or []
         lines.append(f"\n### {p.get('nome')} (id: {p.get('id')})")
         lines.append(f"- Dores: {', '.join(p.get('dores', []))}")
+        if p.get("individualidade"):
+            lines.append(f"- Individualidade: {p['individualidade']}")
         lines.append(f"- Valores: {', '.join(p.get('valores', []))}")
         lines.append(f"- Canais: {', '.join(p.get('canais', []))}")
         lines.append(f"- Gatilhos: {', '.join(p.get('gatilhos', []))}")

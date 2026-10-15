@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "crewai>=0.86",
     "requests>=2.32",
+    "curl_cffi>=0.7",
     "beautifulsoup4>=4.12",
     "lxml>=5.2",
     "markdownify>=0.13",

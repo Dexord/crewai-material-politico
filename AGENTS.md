@@ -18,7 +18,7 @@ ausência.
 |---|---|
 | Orquestração | `crewai` 1.15.x (sem litellm; provider nativo Ollama/OpenAI-compatível) |
 | LLM | Ollama local, modelo `qwen3.5:9b` (Q4_K_M, 9B, nativo 262144 ctx, tools+thinking) |
-| Scraping | `requests` + `BeautifulSoup` + `markdownify` |
+| Scraping | `curl_cffi` (fingerprint Chrome) → fallback `requests` + `BeautifulSoup` + `markdownify` |
 | RSS | `feedparser` + `PyYAML` |
 | Busca | `ddgs` (metasearch; backend `auto`, region `br-pt`) |
 | Config | `pydantic-settings` (`.env`) |
@@ -79,18 +79,19 @@ ollama ps        # mostra CONTEXT e PROCESSOR do modelo carregado
 ```
 config/
   sources.yaml      # fontes do pesquisador (RSS + portais) — EDITE AQUI para adicionar blogs
-  profiles.yaml     # 5 perfis demográficos (dores, valores, canais, gatilhos, objeções)
+                    # rss_cfg: limite_por_feed / limite_total (corte round-robin entre feeds)
+  profiles.yaml     # 5 perfis demográficos (dores, individualidade, valores, canais, gatilhos, objeções)
 src/
   config.py         # Settings (lê .env): ollama_base_url, ollama_model, output_dir,
                     # scrape_rate_limit, vault_dir, max_depth
   crew.py           # pipeline de conteudo: 4 agentes + 4 tasks (TOM_ENQUADRAMENTO)
   crew_pesquisador.py  # pesquisa um alvo e persiste fato/entidade no vault (consome a fila)
   crew_investigador.py # estrutura o vault e mantem a fila (NAO pesquisa na web)
-  profiles.py       # carrega profiles.yaml e injeta no analista
+  profiles.py       # carrega profiles.yaml (dores/individualidade/valores/...) e injeta nos agentes de escrita
   main.py           # CLI: run / investigar / pesquisar / agenda / aprovar / publicar
   output/render.py  # salva saída em data/output/
   output/postagem.py # schema Peca/Pacote (pydantic), fila de postagem (JSON) e .txt por plataforma
-  output/entregaveis.py # schemas RoteiroVideo/PacoteRedes/Reportagem + gravacao em data/output/entregaveis/
+  output/entregaveis.py # schemas RoteiroVideo/PacoteRedes/Reportagem (+Marco/cronologia) + gravacao em data/output/entregaveis/
   vault/
     vault.py        # ler/escrever notas c/ frontmatter (PyYAML), id/slug, escrita atômica
     log.py          # append no log/<data>.md
@@ -101,8 +102,9 @@ src/
     entidades.py    # resolucao de entidades: score, aliases, fundir/merge, deduplicar
   tools/
     search.py       # buscar_na_web (ddgs -> markdown) + auto-log
-    scraper.py      # extrair_markdown (requests+bs4 -> markdown) + auto-log
-    sources.py      # listar_fontes, ler_rss, ler_rss_ativos (config/sources.yaml)
+    scraper.py      # extrair_markdown: curl_cffi (impersonate Chrome) -> fallback requests+bs4 -> markdown + auto-log
+    sources.py      # listar_fontes, ler_rss, ler_rss_ativos (config/sources.yaml;
+                    # fetch paralelo de feeds + limites rss_cfg com corte round-robin)
     vault_tools.py  # salvar_fato/noticia/pessoa/organizacao, registrar_vinculo, relacionar, fila, grafo
 data/
   output/           # saidas do run (gitignored)
@@ -161,6 +163,19 @@ manchetes que **citam entidades do grafo** (`sources.filtrar_relevantes`) e roda
 (manchete + ângulo + entidades + `source_url`). Saída em `data/output/`. Complementa o fluxo
 proativo (grafo) com material **fresco** do noticiário.
 
+RSS é fonte de **frescor**, não de aprofundamento (o trabalho pesado continua no `buscar_na_web`).
+`config/sources.yaml` traz ~40 feeds ativos (mainstream política/economia/justiça, investigativo,
+oficiais e monitoramento) e o bloco `rss_cfg` calibra a carga **sem mexer em código**:
+
+- `limite_por_feed` (default 5): itens lidos de cada feed.
+- `limite_total` (default 60; `0` = sem teto): teto global entregue ao agente. O corte é
+  **round-robin** (1º item de cada feed, depois o 2º, ...), então nenhum feed é engolido pelos
+  primeiros da lista.
+
+`ler_rss_ativos` e `carregar_itens_rss` (usado pelo `pautas`) respeitam esses limites e leem os
+feeds **em paralelo** (`ThreadPoolExecutor`, ~40 feeds em poucos segundos), com `User-Agent` de
+navegador (alguns portais bloqueiam o UA padrão do `urllib`).
+
 Vault em `data/vault/` (Obsidian): `log/`, `noticias/`, `fatos/`, `pessoas/`, `organizacoes/`,
 `temas/`, `fila/`. Toda nota tem frontmatter YAML + `[[wikilinks]]` (Graph View do Obsidian).
 
@@ -216,20 +231,32 @@ mesmo primeiro/último.
 ### Entregaveis extras e fila de postagem (F3)
 
 Export-only (sem auto-post). Com `run --saidas video,redes,reportagem` (ou `todas`), o crew
-ganha agentes especializados (5o/6o/7o) que partem da versao aprovada pelo revisor:
+ganha agentes especializados que partem da versao aprovada pelo revisor. Quando `reportagem`
+esta presente, ela e gerada **antes** de video/redes e entra no contexto deles.
 
-- **Roteirista de Video Curto** (`video`): roteiro de ~1m30s **por perfil** (5 roteiros, um por
-  manchete/perfil) com gancho, cenas cronometradas (narracao + texto de tela) e CTA. Schema
-  `PacoteVideos` (`src/output/entregaveis.py`).
+- **Redator Jornalista** (`reportagem`): **reportagem investigativa** datada e densa (estilo
+  The Intercept/ICL), com `titulo`, `linha_fina`, `lead`, `corpo` em markdown (6–9 secoes,
+  ~900–1300 palavras), `cronologia` (marcos com **data**, fato e fonte), `dados_chave` e
+  `fontes`. Cada afirmacao traz **data e numero** (prioriza datas de acontecimentos antigos
+  que **liguem pessoas**); o impacto mira as **dores/individualidade** de cada perfil **sem
+  citar os perfis**. Sem frase generica. Schema `Reportagem`
+  (com `Marco`) em `src/output/entregaveis.py`. Tem tools de vault para puxar datas/valores.
+- **Roteirista de Video Curto** (`video`): roteiro de **1m30s–2min** por perfil (5 roteiros),
+  em formato **vlog politico** (linguagem falada, celular na mao). Estrutura obrigatoria:
+  gancho -> polemica (com comparacao/anedota) -> humor (piada curta de retencao) -> impacto
+  no perfil (com dados e datas) -> CTA. Cada cena tem `bloco` (gancho/polemica/humor/impacto/
+  cta). Schema `PacoteVideos`.
 - **Copywriter de Redes** (`redes`): **um item por perfil** — post de **Facebook** + **fio do
   Bluesky** (1–4 posts, com link em cada) + **título/subtítulo de imagem** (Canva). Schema
   `PacoteRedesMulti`; os posts viram peças na fila de postagem (com o perfil na `nota`) e o
   pacote (com a imagem) vai para `data/output/entregaveis/`.
-- **Redator Jornalista** (`reportagem`): **reportagem/noticia** extensa (titulo, linha fina,
-  lide, corpo em markdown com secoes). Schema `Reportagem`.
 
 As 5 manchetes do `run` sao **uma por perfil demografico** (o roteirista recebe `profiles.yaml`
-e o revisor garante a cobertura dos 5 perfis).
+e o revisor garante a cobertura dos 5 perfis). O bloco de perfis (com **`individualidade`**) e
+injetado tambem no Redator Jornalista, no Roteirista de Video e no Copywriter de Redes — assim o
+texto mira as dores e a individualidade de **uma pessoa real de cada perfil**, sem citar o perfil.
+O campo `individualidade` (a lente autointeressada: "o que EU ganho/perco") vive no
+`profiles.yaml`, entao da para calibrar por perfil sem mexer no codigo.
 
 Saidas em `data/output/entregaveis/` (video, reportagem) e na fila de postagem
 `data/output/fila-postagem.json` + `data/output/postagens/<id>.txt` (ciclo
@@ -273,6 +300,9 @@ Definidas em `TOM_ENQUADRAMENTO` (`src/crew.py`) e replicadas no revisor:
   (TSE Res. 23.610/2019); Flávio Bolsonaro é figura pública, então afirmação factual falsa
   gera risco de difamação/calúnia. Por isso o revisor é um **gate**, não enfeite.
 - Respeitar `robots.txt`, usar `User-Agent` identificado e rate-limit (`SCRAPE_RATE_LIMIT`).
+  Bloqueio anti-bot é tratado por **fingerprint de Chrome** (`curl_cffi`, `impersonate="chrome"`)
+  com fallback para `requests` — **não** por proxy residencial, captcha ou burla de `robots.txt`.
+  Quando o HTML segue bloqueado (ex.: Cloudflare), usa-se o **RSS** da fonte.
 
 ## 8. Configuração (.env)
 
@@ -330,13 +360,21 @@ rejeitados/ignorados. O contexto é controlado **do lado do Ollama**:
 
 ## 10. Problemas conhecidos
 
-- **UOL devolve 403** (anti-bot) no scraping por `requests`. Ignorado por decisão do projeto;
-  trocar por RSS ou adicionar `httpx[http2]` + warmup de sessão no futuro.
+- **UOL / anti-bot (revisado 2026-10)**: o UOL **não** bloqueia mais o scraper — home, seções e
+  artigos retornam `200` com `requests`+UA de Chrome; o `robots.txt` do UOL **permite** crawling
+  (só lista `Sitemap`). O bloqueio real hoje é **Cloudflare** (ex.: The Intercept, `403` no HTML) e
+  é resolvido pelo `curl_cffi` (`impersonate="chrome"`, fingerprint TLS/HTTP2). Nesses sites o
+  **RSS costuma funcionar** mesmo quando o HTML não (Cloudflare libera `/feed`). UA de Chrome
+  sozinho **não** resolve Cloudflare forte — aí o fallback é o RSS, sem burlar `robots.txt`.
 - **Busca web**: usa `ddgs` no backend `auto`. Os backends individuais (`duckduckgo`,
   `google`, `bing`, `brave`) costumam devolver `DDGSException: No results found` (bloqueio de
   IP/rate-limit) — por isso não fixar `backend`. `region="br-pt"` é respeitado no `auto`
   quando há fonte brasileira; temas muito cobertos no exterior trazem páginas em espanhol.
 - **G1** responde por `requests` puro. **Senado RSS** correto: `https://www12.senado.leg.br/noticias/rss`.
+- **UA de feed**: alguns feeds (ex.: IstoÉ) bloqueiam o `User-Agent` padrão do `urllib`;
+  `sources.py` manda UA de navegador. **STF Notícias** (`https://noticias.stf.jus.br/feed/`)
+  responde `202` vazio de forma intermitente (anti-bot); nesse caso sai "Feed invalido ou
+  inacessivel" e os demais feeds seguem normais (`ativo: false` desliga se incomodar).
 - **Console Windows**: emojis/acentos causam ruído de `charmap` no crewAI. `src/main.py`
   reconfigura stdout/stderr para utf-8; rode com `$env:PYTHONUTF8=1` se necessário.
 - **Espaço em branco/fonte única**: quando o tema tem pouca cobertura, o modelo tende a

@@ -4,6 +4,10 @@ perfis:
     dores:
       - "Descrença na política tradicional"
       - "Sensação de que nenhum candidato representa"
+    individualidade: >-
+      Ja saiu do jogo por autopreservacao: so volta a se importar se o prejuizo
+      chegar ao seu bolso, a sua rua ou a sua familia. Nao age por ideal
+      coletivo — age pelo que ganha ou perde pessoalmente.
     valores:
       - "Autenticidade"
       - "Repúdio à corrupção e à incoerência"
@@ -20,6 +24,10 @@ perfis:
     dores:
       - "Desemprego e precarização do trabalho"
       - "Falta de perspectiva de futuro"
+    individualidade: >-
+      Pensa na propria trajetoria: sair da casa dos pais, primeiro emprego,
+      renda, aluguel, divida, talvez sair do pais. Responde a "o que isso
+      impede VOCE de conquistar".
     valores:
       - "Justiça social"
       - "Clareza e informalidade na comunicação"
@@ -36,6 +44,10 @@ perfis:
     dores:
       - "Inflação e custo de vida"
       - "Insegurança urbana"
+    individualidade: >-
+      Protege o proprio patrimonio e padrao de vida: casa, carro, escola dos
+      filhos, plano de saude, seguranca do bairro. Mede tudo pelo custo e pelo
+      risco de perder o que construiu; confia no dado que afeta o seu bolso.
     valores:
       - "Responsabilidade fiscal"
       - "Credibilidade e fontes confiáveis"
@@ -51,6 +63,10 @@ perfis:
     dores:
       - "Medo de perder direitos e benefícios"
       - "Desvalorização de aposentadorias e pensões"
+    individualidade: >-
+      Quer preservar o proprio sustento e a dignidade: manter o beneficio, o
+      remedio, e nao voltar a depender dos filhos. Teme perder o que levou a
+      vida inteira para conquistar — "o que isso TIRA de voce".
     valores:
       - "Proteção social"
       - "Respeito e clareza"
@@ -67,6 +83,10 @@ perfis:
     dores:
       - "Condições de trabalho no campo"
       - "Disputa por terra, subsídios e política agrícola"
+    individualidade: >-
+      Defende o proprio negocio e a propria producao: terra, safra, preco,
+      credito, escoamento, heranca. Empreendedor por natureza; mede qualquer
+      proposta por "ajuda ou atrapalha o MEU negocio".
     valores:
       - "Trabalho e produção"
       - "Defesa de interesses do setor"

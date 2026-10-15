@@ -44,6 +44,11 @@ def run(tema: str, saidas: str = "") -> int:
     print(f"\nSaída salva em: {path}")
 
     idx = 4
+    if "reportagem" in tokens and idx < len(outs):
+        rep = getattr(outs[idx], "pydantic", None)
+        if rep is not None:
+            print(f"Reportagem salva em: {entregaveis.salvar_reportagem(rep, tema)}")
+        idx += 1
     if "video" in tokens and idx < len(outs):
         pacote = getattr(outs[idx], "pydantic", None)
         if pacote is not None:
@@ -78,11 +83,6 @@ def run(tema: str, saidas: str = "") -> int:
                     f"'{item.imagem.titulo}' / '{item.imagem.subtitulo}'"
                 )
                 print(f"  pacote de redes: {entregaveis.salvar_pacote_redes(item, tema)}")
-        idx += 1
-    if "reportagem" in tokens and idx < len(outs):
-        rep = getattr(outs[idx], "pydantic", None)
-        if rep is not None:
-            print(f"Reportagem salva em: {entregaveis.salvar_reportagem(rep, tema)}")
         idx += 1
 
     _render_entidades()

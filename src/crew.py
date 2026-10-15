@@ -172,11 +172,15 @@ def build_crew(settings: Settings, saidas: list[str] | None = None, step_callbac
             "complementar com materia de portais.\n"
             "3. Use extrair_markdown para baixar e converter as paginas mais relevantes.\n"
             "4. PERSISTA no vault o que for novo: salvar_fato para cada fato (com fonte) e "
-            "salvar_noticia para materias relevantes, informando as entidades.\n"
-            "5. Produza um dossie em markdown com fatos numerados (afirmacao, contexto e "
+            "salvar_noticia para materias relevantes, informando as entidades. SEMPRE que a "
+            "fonte informar, preencha 'data_fato' (AAAA-MM-DD) e escreva a DATA dentro da "
+            "afirmacao (ex.: 'Em 07/07/2026, ...'). Fato sem data e menos util.\n"
+            "5. Produza um dossie em markdown com fatos numerados (afirmacao, DATA, contexto e "
             "source_url). Registre falhas de acesso em vez de inventar.\n"
             "6. Priorize fatos com NUMERO, DATA, VOTACAO ou CONTRADICAO entre discurso e "
-            "pratica. Ausencia de informacao NAO e fato: se o tema tiver poucos resultados, "
+            "pratica — em especial DATAS de acontecimentos antigos que LIGUEM PESSOAS (quando "
+            "a relacao/alianca comecou, quem apresentou quem, nomeacoes, contratos e reunioes). "
+            "Ausencia de informacao NAO e fato: se o tema tiver poucos resultados, "
             "tente termos alternativos (siglas, anos, numeros de projeto).\n"
             "7. Use PELO MENOS 2 fontes diferentes (idealmente 3 ou mais) para sustentar o "
             "dossie; nunca apoie o material em uma unica materia.\n"
@@ -188,7 +192,7 @@ def build_crew(settings: Settings, saidas: list[str] | None = None, step_callbac
         ),
         agent=pesquisador,
         expected_output=(
-            "Dossie em markdown com fatos numerados, cada um com afirmacao, contexto e "
+            "Dossie em markdown com fatos numerados, cada um com afirmacao, DATA, contexto e "
             "source_url. Fatos/materias novos foram salvos no vault. Nenhuma afirmacao sem fonte."
         ),
     )
@@ -313,17 +317,91 @@ def build_crew(settings: Settings, saidas: list[str] | None = None, step_callbac
     tasks = [tarefa_pesquisa, tarefa_analise, tarefa_roteiro, tarefa_revisao]
     saidas = saidas or []
 
+    tarefa_reportagem = None
+    if "reportagem" in saidas:
+        redator_jornalista = Agent(
+            role="Redator Jornalista",
+            goal=(
+                "Escrever uma REPORTAGEM investigativa, datada e densa (formato blog/revista) "
+                "sobre o tema, com titulo, linha fina, lide, corpo em secoes, cronologia, "
+                "dados-chave e fontes."
+            ),
+            backstory=(
+                "Voce e jornalista investigativo de oposicao, no estilo das grandes reportagens "
+                "(The Intercept, ICL Noticias). Voce ancora cada afirmacao em documento, numero "
+                "e DATA, e constroi a narrativa do fato concreto ate a consequencia. Voce nunca "
+                "escreve frase generica: escreve reportagem densa, verificavel e datada."
+            ),
+            tools=[buscar_notas, ler_nota, consultar_grafo],
+            llm=llm_analista,
+            verbose=True,
+            allow_delegation=False,
+        )
+        tarefa_reportagem = Task(
+            description=(
+                "A partir do DOSSIE do pesquisador e da versao final do revisor, escreva uma "
+                "REPORTAGEM investigativa (formato blog/revista) sobre o tema, no nivel de "
+                "profundidade das grandes reportagens (The Intercept, ICL Noticias, premiadas).\n\n"
+                "Entregue: 'titulo', 'linha_fina', 'lead' (lide), 'corpo' (markdown com secoes "
+                "'## ...'), 'cronologia' (lista de marcos, cada um com 'data', 'fato' e 'fonte'), "
+                "'dados_chave' (numeros essenciais) e 'fontes' (URLs).\n\n"
+                f"{profiles_as_markdown()}\n\n"
+                "Padrao jornalistico:\n"
+                "- TODO fato deve vir com DATA (dia/mes/ano; ex.: 'em 7 de julho de 2026'). Se a "
+                "fonte so informar o mes/ano, use isso ('em julho de 2026').\n"
+                "- Traga NUMEROS concretos (valores, quantias, votos, prazos, anos, percentuais).\n"
+                "- Estrutura sugerida do corpo, em 6 a 9 secoes: lide -> como a acao/esquema "
+                "funcionava -> cronologia do caso -> os numeros -> contradicao entre discurso e "
+                "pratica -> quem se beneficia e quem paga a conta -> 'Por que isso importa' "
+                "(impacto nos perfis) -> o que segue em aberto (investigacoes e processos).\n"
+                "- A reportagem deve atingir as DORES e a INDIVIDUALIDADE de uma pessoa real "
+                "de cada perfil (ver os perfis acima) — sem um paragrafo por perfil e SEM NUNCA "
+                "usar as palavras do perfil. E PROIBIDO escrever 'jovens', 'aposentados', "
+                "'idosos', 'classe media', 'trabalhadores do campo', 'agro' ou o nome do perfil. "
+                "Fale pela SITUACAO concreta da pessoa ('quem depende do INSS', 'quem procura o "
+                "primeiro emprego', 'quem tem uma divida no nome', 'quem planta no proprio "
+                "lote'), de forma integrada no texto. Impacto concreto, nunca rotulado.\n"
+                "- De atencao especial a acontecimentos ANTIGOS que LIGUEM PESSOAS: quando a "
+                "relacao/alianca comecou, quem apresentou quem, datas de nomeacoes, contratos e "
+                "reunioes. A cronologia dos vinculos fortalece o embasamento.\n"
+                "- Dimensao alvo: ~900 a 1300 palavras. Denso, sem enrolacao.\n"
+                "- Use o vault (buscar_notas/ler_nota/consultar_grafo) para puxar datas, valores "
+                "e conexoes ja documentadas.\n\n"
+                f"{TOM_ENQUADRAMENTO}\n"
+                "Proibido:\n"
+                "- frase generica/vazia sem dado ('a corrupcao sistemica', 'e um retrato de', "
+                "'levanta questoes', 'impacta a sociedade');\n"
+                "- adjetivo sem numero;\n"
+                "- repetir a mesma afirmacao em secoes diferentes;\n"
+                "- inventar data, numero ou fato ausente do dossie/fonte (se nao houver data, "
+                "nao invente).\n"
+                "Toda afirmacao precisa de fonte; liste as URLs usadas em 'fontes'."
+            ),
+            agent=redator_jornalista,
+            expected_output=(
+                "Reportagem no schema definido (titulo, linha fina, lide, corpo com 6-9 secoes, "
+                "cronologia datada, dados-chave e fontes)."
+            ),
+            output_pydantic=Reportagem,
+            context=[tarefa_pesquisa, tarefa_revisao],
+        )
+        agents.append(redator_jornalista)
+        tasks.append(tarefa_reportagem)
+
+    contexto_escrita = [tarefa_revisao] + ([tarefa_reportagem] if tarefa_reportagem is not None else [])
+
     if "video" in saidas:
         roteirista_video = Agent(
             role="Roteirista de Video Curto",
             goal=(
-                "Escrever um roteiro de video curto (aproximadamente 1m30s) sobre o tema, "
-                "a partir da versao aprovada pelo revisor, com gancho, cenas cronometradas, "
-                "narracao e texto de tela."
+                "Escrever, para cada perfil, um roteiro de video curto (1m30s a 2min) em "
+                "formato VLOG politico — natural, falado, com gancho, polemica, humor, "
+                "impacto com dados e CTA."
             ),
             backstory=(
-                "Voce e roteirista de video curto de campanha de oposicao. Prende nos "
-                "primeiros segundos e sustenta cada afirmacao em fato com fonte, sem distorcer."
+                "Voce e roteirista de vlog politico de oposicao. Fala como gente normal, com "
+                "o celular na mao, e prende nos primeiros segundos. Traduz fatos com "
+                "comparacoes e um toque de humor leve e factual. Nunca inventa fato ou data."
             ),
             llm=llm_criativo,
             verbose=True,
@@ -331,18 +409,34 @@ def build_crew(settings: Settings, saidas: list[str] | None = None, step_callbac
         )
         tarefa_video = Task(
             description=(
-                "A partir da versao final aprovada pelo revisor (5 manchetes, uma por perfil), "
-                "escreva UM roteiro de video curto (~1m30s) PARA CADA manchete/perfil "
-                "(portanto 5 roteiros).\n"
-                "Cada roteiro deve ter: 'perfil_alvo', 'titulo', 'gancho', cenas cronometradas "
-                "('narracao' + 'texto_tela') e 'CTA', mantendo o enquadramento do perfil.\n\n"
+                "A partir da REPORTAGEM (e da versao final do revisor), escreva UM roteiro de "
+                "video PARA CADA manchete/perfil (portanto 5 roteiros), de 1m30s a 2min.\n"
+                "O roteiro e um VLOG politico: linguagem natural de quem grava com o celular na "
+                "mao, andando ou no quarto — primeira pessoa, frases curtas, tom de conversa "
+                "('olha', 'serio', 'presta atencao'), sem locucao formal de TV.\n\n"
+                f"{profiles_as_markdown()}\n\n"
+                "Estrutura OBRIGATORIA — marque o campo 'bloco' em cada cena:\n"
+                "- gancho: primeiros 3 a 5 segundos; uma frase/pergunta que para o scroll.\n"
+                "- polemica: o que aconteceu, explicado. Traga UMA COMPARACAO ou ANEDOTA "
+                "concreta para traduzir o fato (ex.: 'e como se...', 'da no mesmo que...').\n"
+                "- humor: UMA piada curta (1 ou 2 frases), leve e ancorada em fato (nunca "
+                "difamacao), para segurar a retencao.\n"
+                "- impacto: como isso atinge o perfil-alvo, com DADOS e DATAS concretos.\n"
+                "- cta: chamada final ligada ao perfil (o que o eleitor deve cobrar/exigir).\n"
+                "Pode repetir 'polemica'/'comparacao'/'impacto' em mais de uma cena se couber.\n\n"
+                "Cada cena tem: 'tempo' (ex.: 0:00-0:06), 'bloco', 'narracao' (o que e falado) e "
+                "'texto_tela' (texto curto na tela). Preencha 'duracao' (ex.: '1m45s') e "
+                "'duracao_s' (total em segundos).\n"
+                "Traga DATA e NUMERO sempre que existirem na fonte — priorize datas de "
+                "acontecimentos antigos que liguem pessoas (quando a relacao comecou). Total de "
+                "fala: ~230 a 320 palavras (cabe em 1m30s-2min) — nao ultrapasse.\n\n"
                 f"{TOM_ENQUADRAMENTO}\n"
                 "Nao invente fatos. Preencha 'source_urls' com as fontes usadas."
             ),
             agent=roteirista_video,
-            expected_output="Pacote com 5 roteiros de video (um por perfil).",
+            expected_output="Pacote com 5 roteiros de video (um por perfil), no schema definido.",
             output_pydantic=PacoteVideos,
-            context=[tarefa_revisao],
+            context=contexto_escrita,
         )
         agents.append(roteirista_video)
         tasks.append(tarefa_video)
@@ -367,8 +461,9 @@ def build_crew(settings: Settings, saidas: list[str] | None = None, step_callbac
         )
         tarefa_redes = Task(
             description=(
-                "A partir da versao final aprovada pelo revisor (5 manchetes, uma por perfil), "
-                "produza UM item de redes PARA CADA manchete/perfil (portanto 5 itens).\n"
+                "A partir da REPORTAGEM e da versao final aprovada pelo revisor (5 manchetes, "
+                "uma por perfil), produza UM item de redes PARA CADA manchete/perfil (portanto "
+                "5 itens).\n"
                 "Cada item deve ter:\n"
                 "- 'perfil_alvo'\n"
                 "- 'facebook': texto mais longo (gancho, desenvolvimento, CTA) + 'hashtags' "
@@ -377,47 +472,17 @@ def build_crew(settings: Settings, saidas: list[str] | None = None, step_callbac
                 "caracteres; quando houver link/fonte, INCLUA o link no proprio post.\n"
                 "- 'imagem': 'titulo' (ate ~6 palavras) e 'subtitulo' (uma linha curta) para "
                 "arte no Canva.\n\n"
+                f"{profiles_as_markdown()}\n\n"
                 f"{TOM_ENQUADRAMENTO}\n"
                 "Nao mude fatos nem fontes."
             ),
             agent=copywriter_redes,
             expected_output="Pacote com 5 itens de redes (um por perfil), no schema definido.",
             output_pydantic=PacoteRedesMulti,
-            context=[tarefa_revisao],
+            context=contexto_escrita,
         )
         agents.append(copywriter_redes)
         tasks.append(tarefa_redes)
-
-    if "reportagem" in saidas:
-        redator_jornalista = Agent(
-            role="Redator Jornalista",
-            goal=(
-                "Escrever uma reportagem/noticia extensa (formato blog) sobre o tema, com "
-                "titulo, linha fina, lide e corpo com secoes."
-            ),
-            backstory=(
-                "Voce e jornalista de oposicao. Escreve materia aprofundada, com enquadramento "
-                "por fato e consequencia, hierarquizando dados e citando as fontes."
-            ),
-            llm=llm_analista,
-            verbose=True,
-            allow_delegation=False,
-        )
-        tarefa_reportagem = Task(
-            description=(
-                "A partir da versao final aprovada pelo revisor e do dossie, escreva uma "
-                "reportagem/noticia extensa (formato blog) sobre o tema, com: 'titulo', "
-                "'linha_fina', 'lead' (lide) e 'corpo' em markdown com secoes (## ...).\n\n"
-                f"{TOM_ENQUADRAMENTO}\n"
-                "Nao invente fatos. Preencha 'fontes' com as URLs usadas."
-            ),
-            agent=redator_jornalista,
-            expected_output="Reportagem no schema definido (titulo, linha fina, lide, corpo, fontes).",
-            output_pydantic=Reportagem,
-            context=[tarefa_revisao],
-        )
-        agents.append(redator_jornalista)
-        tasks.append(tarefa_reportagem)
 
     return Crew(
         agents=agents,
