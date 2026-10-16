@@ -2,6 +2,7 @@ from crewai import Agent, Crew, LLM, Process, Task
 
 from .config import Settings
 from .crew import TOM_ENQUADRAMENTO
+from .output.entregaveis import PacotePautas
 from .tools.scraper import extract_markdown
 from .tools.search import search_web
 from .tools.vault_tools import buscar_notas, consultar_grafo, ler_nota
@@ -49,13 +50,18 @@ def build_pautas_crew(settings: Settings, step_callback=None) -> Crew:
             "Flavio Bolsonaro, da familia Bolsonaro ou de pessoas proximas do partido e "
             "amigos.\n\n"
             f"{TOM_ENQUADRAMENTO}\n"
-            "No maximo 8 pautas. Nao invente; toda pauta precisa de fonte."
+            "No maximo 8 pautas. Nao invente; toda pauta precisa de fonte.\n"
+            "Para cada pauta, preencha tambem 'alvos_pesquisa': nomes/temas relevantes "
+            "citados na materia que AINDA NAO tem nota no vault (confira com buscar_notas) e "
+            "que valha a pena investigar depois (viram itens da fila do daemon). Se nao houver, "
+            "deixe a lista vazia. Nao repita em 'alvos_pesquisa' quem ja esta em 'entidades'."
         ),
         agent=criador,
         expected_output=(
-            "Lista em markdown de ate 8 pautas, cada uma com manchete, angulo, entidades "
-            "ligadas e source_url."
+            "Pautas estruturadas (schema PacotePautas): no maximo 8 itens, cada um com "
+            "manchete, angulo, entidades ligadas, alvos_pesquisa e source_url."
         ),
+        output_pydantic=PacotePautas,
     )
 
     return Crew(

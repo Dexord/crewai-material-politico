@@ -6,9 +6,17 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from ..config import get_settings
+
 DISCLOSURE = "Conteúdo gerado por IA - verificar antes de publicar."
-FILA_PATH = Path("data/output/fila-postagem.json")
-POSTAGENS_DIR = Path("data/output/postagens")
+
+
+def _fila_path() -> Path:
+    return Path(get_settings().output_dir) / "fila-postagem.json"
+
+
+def _postagens_dir() -> Path:
+    return Path(get_settings().output_dir) / "postagens"
 
 
 class Roteiro(BaseModel):
@@ -46,17 +54,17 @@ def _slug(text: str) -> str:
 
 
 def _load() -> list[dict]:
-    if not FILA_PATH.exists():
+    if not _fila_path().exists():
         return []
     try:
-        return json.loads(FILA_PATH.read_text(encoding="utf-8")).get("pecas", [])
+        return json.loads(_fila_path().read_text(encoding="utf-8")).get("pecas", [])
     except json.JSONDecodeError:
         return []
 
 
 def _save(pecas: list[dict]) -> None:
-    FILA_PATH.parent.mkdir(parents=True, exist_ok=True)
-    FILA_PATH.write_text(
+    _fila_path().parent.mkdir(parents=True, exist_ok=True)
+    _fila_path().write_text(
         json.dumps({"pecas": pecas}, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
@@ -137,8 +145,9 @@ def set_status(peca_id: str, status: str) -> bool:
 
 
 def _write_txt(peca: dict) -> Path:
-    POSTAGENS_DIR.mkdir(parents=True, exist_ok=True)
-    path = POSTAGENS_DIR / f"{peca['id']}.txt"
+    out = _postagens_dir()
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / f"{peca['id']}.txt"
     path.write_text(_render(peca), encoding="utf-8")
     return path
 

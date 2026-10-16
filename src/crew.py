@@ -46,11 +46,13 @@ TOM_ENQUADRAMENTO = (
     "pessoas proximas do partido e amigos; se o fato nao conecta a nenhum deles, troque por "
     "outra pauta. Esse vinculo precisa estar na FONTE — NUNCA invente ligacao.\n"
     "- Use NO MAXIMO 1 emoji por peca (idealmente nenhum); excesso de emoji tem cara de texto de IA.\n\n"
-    "Exemplos (ilustrativos):\n"
-    "- RUIM: \"Flavio critica PEC e diz que Lula e oportunista\" (foca na opiniao dele; neutro)\n"
-    "- BOM: \"7 anos, 433 projetos, 2 aprovados — e nenhum virou lei\"\n"
-    "- RUIM: \"Flavio defende liberdade de carga horaria\"\n"
-    "- BOM: \"A proposta que trava a mudanca da escala 6x1\"\n"
+    "Exemplos ILUSTRATIVOS de estilo (nao sao conteudo; NUNCA use estes textos):\n"
+    "- RUIM: manchete centrada na opiniao/acao dele, sem problema concreto.\n"
+    "- BOM: manchete que comece por um dado/numero concreto e aponte a consequencia.\n"
+    "- RUIM: verbo principal 'critica', 'defende', 'propoe', 'diz' ou 'declara'.\n"
+    "- BOM: foco na consequencia para o cidadao, nao no que ele pensa.\n"
+    "PROIBIDO copiar, citar ou reutilizar qualquer exemplo acima como manchete, titulo ou "
+    "frase: eles apenas descrevem o estilo. Se aparecerem no material final, a entrega esta ERRADA.\n"
 )
 
 
@@ -318,6 +320,7 @@ def build_crew(settings: Settings, saidas: list[str] | None = None, step_callbac
     saidas = saidas or []
 
     tarefa_reportagem = None
+    tarefa_reportagem_final = None
     if "reportagem" in saidas:
         redator_jornalista = Agent(
             role="Redator Jornalista",
@@ -388,7 +391,41 @@ def build_crew(settings: Settings, saidas: list[str] | None = None, step_callbac
         agents.append(redator_jornalista)
         tasks.append(tarefa_reportagem)
 
-    contexto_escrita = [tarefa_revisao] + ([tarefa_reportagem] if tarefa_reportagem is not None else [])
+        tarefa_reportagem_final = Task(
+            description=(
+                "O rascunho de reportagem acima foi escrito pelo Redator Jornalista. Verifique "
+                "e CORRIJA antes de publicar; entregue a versao final no mesmo schema.\n\n"
+                "Cheque e conserte:\n"
+                "- TITULO: tem que ser SOBRE o tema e refletir o fato central. NUNCA deixe titulo "
+                "generico, fora do tema ou que pareca exemplo/template; se estiver, reescreva.\n"
+                "- DATAS: confira cada data contra o dossie e as notas do vault (ler_nota/"
+                "buscar_notas) e, se preciso, na web (buscar_na_web/extrair_markdown). Corrija "
+                "datas erradas.\n"
+                "- STATUS JURIDICO/INSTITUCIONAL: nao confunda 'investigado' com 'condenado'; "
+                "nao atribua acao ao orgao errado (ex.: PRE x TRE x STF x PF). Se a fonte nao "
+                "deixar claro, escreva de forma generica ou remova a frase.\n"
+                "- FONTES: toda afirmacao precisa de lastro. Afirmacao sem fonte: remova ou "
+                "suavize. NAO invente fato, numero, data ou vinculo.\n"
+                "- Nao nomeie perfis (use a situacao concreta) e mantenha o enquadramento de oposicao.\n"
+                "- Preserve e, se preciso, ajuste 'cronologia', 'dados_chave' e 'fontes'.\n\n"
+                f"{TOM_ENQUADRAMENTO}\n"
+                "Entregue a versao CORRIGIDA (titulo, linha_fina, lead, corpo, cronologia, "
+                "dados_chave, fontes). Se estiver tudo correto, reproduza a versao, refinando "
+                "apenas a redacao."
+            ),
+            agent=revisor,
+            expected_output=(
+                "Reportagem final validada no schema definido (titulo no tema, corpo com secoes, "
+                "cronologia datada, dados-chave e fontes), sem erro de data ou status juridico."
+            ),
+            output_pydantic=Reportagem,
+            context=[tarefa_pesquisa, tarefa_reportagem],
+        )
+        tasks.append(tarefa_reportagem_final)
+
+    contexto_escrita = [tarefa_revisao] + (
+        [tarefa_reportagem_final] if tarefa_reportagem_final is not None else []
+    )
 
     if "video" in saidas:
         roteirista_video = Agent(

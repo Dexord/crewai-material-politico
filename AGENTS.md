@@ -35,6 +35,7 @@ uv sync                                          # instalar/atualizar deps
 
 # Fluxo de conteudo (pipeline sequencial de 4 agentes)
 uv run python -m src.main run --tema "<tema>"
+uv run python -m src.main run --pautas 3          # usa a pauta 3 do pautas.json mais recente
 
 # Grafo de conhecimento (F2a)
 uv run python -m src.main investigar             # estrutura o vault + mantem a fila
@@ -56,7 +57,9 @@ uv run python -m src.main deduplicar [--aplicar]   # dry-run lista clusters
 uv run python -m src.main fundir <id_a> <id_b>      # funde b -> a (reescreve links)
 
 # Loop autonomo (roda investigar<->pesquisar por N horas, saida ao vivo)
-uv run python -m src.main pesquisar --horas 6 --lote 10
+uv run python -m src.main pesquisar --horas 6 --lote 10            # + pautas a cada lote
+uv run python -m src.main pesquisar --horas 6 --lote 10 --pautas-cada 3   # pautas a cada 3 lotes
+uv run python -m src.main pesquisar --horas 6 --lote 10 --pautas-cada 0   # sem pautas
 .\scripts\loop-noite.ps1 -Horas 6               # wrapper: powercfg + aquece + daemon
 
 # Entregaveis extras + fila de postagem (F3, export-only)
@@ -66,7 +69,10 @@ uv run python -m src.main aprovar <id>                 # rascunho -> aprovado
 uv run python -m src.main publicar <id>                # aprovado -> publicado
 ```
 
-Saída do `run`: markdown timestampado em `data/output/` (gitignored).
+Saída do `run`: markdown timestampado em `data/output/runs/` (gitignored).
+Estrutura de `data/output/`: `runs/` (run), `pautas/` (pautas + `pautas.json`),
+`investigacoes/`, `pesquisas/`, `entregaveis/` (video/reportagem/redes), `postagens/` +
+`fila-postagem.json`, e os `loop-*.log`. Tudo sob `OUTPUT_DIR`.
 Vault (grafo): `data/vault/` (gitignored) — abra como vault no Obsidian.
 
 Checagem rápida do provider / VRAM:
@@ -89,9 +95,9 @@ src/
   crew_investigador.py # estrutura o vault e mantem a fila (NAO pesquisa na web)
   profiles.py       # carrega profiles.yaml (dores/individualidade/valores/...) e injeta nos agentes de escrita
   main.py           # CLI: run / investigar / pesquisar / agenda / aprovar / publicar
-  output/render.py  # salva saída em data/output/
+  output/render.py  # save_output(text, output_dir, tema, subdir) -> data/output/<subdir>/
   output/postagem.py # schema Peca/Pacote (pydantic), fila de postagem (JSON) e .txt por plataforma
-  output/entregaveis.py # schemas RoteiroVideo/PacoteRedes/Reportagem (+Marco/cronologia) + gravacao em data/output/entregaveis/
+  output/entregaveis.py # schemas RoteiroVideo/PacoteRedes/Reportagem/PacotePautas (+Marco) + gravacao em data/output/entregaveis|pautas
   vault/
     vault.py        # ler/escrever notas c/ frontmatter (PyYAML), id/slug, escrita atômica
     log.py          # append no log/<data>.md
@@ -160,8 +166,17 @@ cresce em largura e profundidade mesmo quando a expansão "nome em nome" satura.
 Comando `pautas`: lê os **RSS** de `config/sources.yaml`, filtra **deterministicamente** as
 manchetes que **citam entidades do grafo** (`sources.filtrar_relevantes`) e roda um agente
 **Criador de Pauta** (`src/crew_pautas.py`) que cruza com o grafo e propõe até 8 pautas
-(manchete + ângulo + entidades + `source_url`). Saída em `data/output/`. Complementa o fluxo
-proativo (grafo) com material **fresco** do noticiário.
+(manchete + ângulo + entidades + `source_url`). Saída em `data/output/pautas/` (md + `pautas.json`).
+Complementa o fluxo proativo (grafo) com material **fresco** do noticiário.
+
+As pautas também são **estruturadas** (`PacotePautas`): além de `entidades` (do grafo), cada pauta
+traz `alvos_pesquisa` (nomes/temas ainda sem nota) — que o `pautas` **enfileira** no vault,
+fechando o ciclo `pautas -> fila -> daemon`. Para virar conteúdo sem digitar o tema:
+`run --pautas N` usa a pauta N do `data/output/pautas/pautas.json` como tema.
+
+O mesmo gerador é chamado **dentro do daemon** (`pesquisar --horas ... --pautas-cada K`, ver
+"Loop autonomo") ao fim de cada lote, com **dedupe por `source_url`** entre chamadas da mesma
+execução (manchete já usada não volta). A lógica vive em `main._gerar_pautas(settings, vistas)`.
 
 RSS é fonte de **frescor**, não de aprofundamento (o trabalho pesado continua no `buscar_na_web`).
 `config/sources.yaml` traz ~40 feeds ativos (mainstream política/economia/justiça, investigativo,
@@ -241,6 +256,9 @@ esta presente, ela e gerada **antes** de video/redes e entra no contexto deles.
   que **liguem pessoas**); o impacto mira as **dores/individualidade** de cada perfil **sem
   citar os perfis**. Sem frase generica. Schema `Reportagem`
   (com `Marco`) em `src/output/entregaveis.py`. Tem tools de vault para puxar datas/valores.
+  O rascunho passa por um **gate** (agente Revisor, qwen) que confere **titulo no tema**,
+  **datas** e **status juridico/institucional** (investigado x condenado; PRE x TRE x STF x PF)
+  e devolve a versao final — e **essa** versao que e salva e alimenta video/redes.
 - **Roteirista de Video Curto** (`video`): roteiro de **1m30s–2min** por perfil (5 roteiros),
   em formato **vlog politico** (linguagem falada, celular na mao). Estrutura obrigatoria:
   gancho -> polemica (com comparacao/anedota) -> humor (piada curta de retencao) -> impacto
@@ -273,11 +291,14 @@ Cada linha (ciclos, inicio/fim de agente, passos e itens) sai com timestamp
 - Ao iniciar, roda `reset_em_andamento()` — itens `em_andamento` órfãos de uma interrupção
   voltam para `pendente`.
 - Ciclo: fila vazia → roda o investigador; senão → processa um lote (`--lote`, default 10).
+- **Pautas no loop**: ao fim de cada lote, o daemon chama o **gerador de pautas** (`--pautas-cada`,
+  default `1`; `0` desliga). Roda no **mesmo processo** (modelo já carregado) e no **mesmo log**.
+  Manchetes já usadas não repetem dentro da execução (dedupe por `source_url`, escopo por run).
 - Encerra ao fim do tempo (`--horas`) ou após 3 ciclos sem novidades (saturação).
 - `BLACKLIST_ALVOS` (`.env`) evita o auto-enfileiramento de alvos como o próprio candidato;
   `enfileirar` explícito ignora a blacklist.
-- `scripts/loop-noite.ps1 -Horas 6 [-Logar]`: ajusta `powercfg`, aquece o Ollama e chama o
-  daemon; `-Logar` usa Tee para também salvar o transcript do console.
+- `scripts/loop-noite.ps1 -Horas 6 [-Lote N] [-PautasCada K] [-Logar]`: ajusta `powercfg`,
+  aquece o Ollama e chama o daemon; `-Logar` usa Tee para também salvar o transcript do console.
 
 Nota: `--horas` é um orçamento **aproximado** — um item em execução pode passar do prazo até
 terminar (o tempo é checado entre itens/lotes).

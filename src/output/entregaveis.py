@@ -1,3 +1,4 @@
+import json
 import re
 import unicodedata
 from datetime import datetime
@@ -5,8 +6,13 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from ..config import get_settings
+
 DISCLOSURE = "Conteúdo gerado por IA - verificar antes de publicar."
-ENTREGAVEIS_DIR = Path("data/output/entregaveis")
+
+
+def _entregaveis_dir() -> Path:
+    return Path(get_settings().output_dir) / "entregaveis"
 
 
 class CenaVideo(BaseModel):
@@ -88,6 +94,43 @@ class Reportagem(BaseModel):
     fontes: list[str] = Field(default_factory=list)
 
 
+class Pauta(BaseModel):
+    manchete: str = Field(description="Manchete da pauta (ate 12 palavras)")
+    angulo: str = Field(description="A contradicao/consequencia concreta a explorar")
+    entidades: list[str] = Field(default_factory=list, description="Entidades do grafo ligadas")
+    alvos_pesquisa: list[str] = Field(
+        default_factory=list,
+        description="Nomes/temas relevantes ainda SEM nota no vault, a pesquisar",
+    )
+    source_url: str = Field(default="", description="URL da materia")
+
+
+class PacotePautas(BaseModel):
+    itens: list[Pauta] = Field(default_factory=list)
+
+
+def _pautas_dir() -> Path:
+    return Path(get_settings().output_dir) / "pautas"
+
+
+def salvar_pautas_json(pacote: PacotePautas) -> Path:
+    out = _pautas_dir()
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / "pautas.json"
+    path.write_text(json.dumps(pacote.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8")
+    return path
+
+
+def carregar_pautas() -> list[dict]:
+    path = _pautas_dir() / "pautas.json"
+    if not path.exists():
+        return []
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("itens", [])
+    except json.JSONDecodeError:
+        return []
+
+
 def _slug(text: str) -> str:
     text = unicodedata.normalize("NFKD", str(text))
     text = text.encode("ascii", "ignore").decode("ascii").lower()
@@ -96,12 +139,13 @@ def _slug(text: str) -> str:
 
 
 def _path(prefixo: str, tema: str, sufixo: str = "") -> Path:
-    ENTREGAVEIS_DIR.mkdir(parents=True, exist_ok=True)
+    out = _entregaveis_dir()
+    out.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     nome = _slug(tema)[:40]
     if sufixo:
         nome = f"{nome}-{_slug(sufixo)[:24]}"
-    return ENTREGAVEIS_DIR / f"{stamp}-{prefixo}-{nome}.md"
+    return out / f"{stamp}-{prefixo}-{nome}.md"
 
 
 def salvar_roteiro_video(rv: RoteiroVideo, tema: str) -> Path:

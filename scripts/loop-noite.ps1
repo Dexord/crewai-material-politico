@@ -1,6 +1,7 @@
 param(
     [double]$Horas = 6,
     [int]$Lote = 10,
+    [int]$PautasCada = 1,
     [switch]$Logar,
     [string]$Tema = ""
 )
@@ -31,10 +32,10 @@ Write-Host "Iniciando daemon ($Horas h). Ctrl+C encerra." -ForegroundColor Yello
 Write-Host ""
 
 if ($Logar) {
-    uv run python -m src.main pesquisar --horas $Horas --lote $Lote 2>&1 |
+    uv run python -m src.main pesquisar --horas $Horas --lote $Lote --pautas-cada $PautasCada 2>&1 |
         Tee-Object -FilePath $transcript
 } else {
-    uv run python -m src.main pesquisar --horas $Horas --lote $Lote
+    uv run python -m src.main pesquisar --horas $Horas --lote $Lote --pautas-cada $PautasCada
 }
 
 Write-Host ""

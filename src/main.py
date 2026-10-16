@@ -40,14 +40,16 @@ def run(tema: str, saidas: str = "") -> int:
     revisao = outs[3] if len(outs) > 3 else None
     texto_final = getattr(revisao, "raw", None) or getattr(result, "raw", str(result))
     print(texto_final)
-    path = save_output(texto_final, settings.output_dir, tema)
+    path = save_output(texto_final, settings.output_dir, tema, "runs")
     print(f"\nSaída salva em: {path}")
 
     idx = 4
-    if "reportagem" in tokens and idx < len(outs):
-        rep = getattr(outs[idx], "pydantic", None)
-        if rep is not None:
-            print(f"Reportagem salva em: {entregaveis.salvar_reportagem(rep, tema)}")
+    if "reportagem" in tokens:
+        idx += 1  # pula o rascunho; a versao validada pelo revisor vem na task seguinte
+        if idx < len(outs):
+            rep = getattr(outs[idx], "pydantic", None)
+            if rep is not None:
+                print(f"Reportagem salva em: {entregaveis.salvar_reportagem(rep, tema)}")
         idx += 1
     if "video" in tokens and idx < len(outs):
         pacote = getattr(outs[idx], "pydantic", None)
@@ -96,7 +98,7 @@ def investigar() -> int:
     result = crew.kickoff()
     text = getattr(result, "raw", str(result))
     print(text)
-    path = save_output(text, settings.output_dir, "investigacao")
+    path = save_output(text, settings.output_dir, "investigacao", "investigacoes")
     print(f"\nResumo salvo em: {path}")
     _render_entidades()
     return 0
@@ -155,7 +157,7 @@ def _processar_item(item: dict, settings) -> bool:
             }
         )
         text = getattr(result, "raw", str(result))
-        save_output(text, settings.output_dir, f"pesquisa-{item['id']}")
+        save_output(text, settings.output_dir, f"pesquisa-{item['id']}", "pesquisas")
         fila.mark_status(item["id"], "concluido")
         log_event(f"pesquisar concluido: {alvo}", "fila")
         _render_entidades()
@@ -168,7 +170,7 @@ def _processar_item(item: dict, settings) -> bool:
         return False
 
 
-def pesquisar(limite: int = 0, horas: float = 0.0, lote: int = 10) -> int:
+def pesquisar(limite: int = 0, horas: float = 0.0, lote: int = 10, pautas_cada: int = 1) -> int:
     settings = get_settings()
     ensure_vault()
 
@@ -177,7 +179,7 @@ def pesquisar(limite: int = 0, horas: float = 0.0, lote: int = 10) -> int:
         print(f"Retomando {orfaos} item(ns) orfao(s) (em_andamento -> pendente).")
 
     if horas and horas > 0:
-        return _daemon(settings, horas, lote)
+        return _daemon(settings, horas, lote, pautas_cada)
 
     processados = 0
     while limite == 0 or processados < limite:
@@ -195,7 +197,7 @@ def pesquisar(limite: int = 0, horas: float = 0.0, lote: int = 10) -> int:
     return 0
 
 
-def _daemon(settings, horas: float, lote: int) -> int:
+def _daemon(settings, horas: float, lote: int, pautas_cada: int = 1) -> int:
     deadline = datetime.now() + timedelta(hours=horas)
     log_path = Path(settings.output_dir) / f"loop-{datetime.now():%Y%m%d-%H%M%S}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -207,9 +209,13 @@ def _daemon(settings, horas: float, lote: int) -> int:
             fh.write(line + "\n")
 
     log(f"daemon iniciado por {horas}h (lote={lote}). Fim previsto: {deadline:%H:%M}.")
+    if pautas_cada > 0:
+        log(f"pautas: geracao automatica a cada {pautas_cada} lote(s).")
     log(f"log em: {log_path}")
     dry = 0
     total = 0
+    ciclos = 0
+    vistas: set[str] = set()
 
     while datetime.now() < deadline:
         if fila.pending_count() == 0:
@@ -243,6 +249,15 @@ def _daemon(settings, horas: float, lote: int) -> int:
             total += 1
         log(f"lote concluido ({processados_lote} itens; total {total})")
 
+        ciclos += 1
+        if pautas_cada > 0 and ciclos % pautas_cada == 0:
+            try:
+                log(">>> gerador de pautas (inicio)")
+                geradas = _gerar_pautas(settings, vistas)
+                log(f"<<< gerador de pautas (fim; {geradas} manchete(s) nova(s))")
+            except Exception as exc:  # noqa: BLE001
+                log(f"!!! erro no gerador de pautas: {exc}")
+
     log(f"daemon encerrado. Itens processados: {total}. Pendentes: {fila.pending_count()}.")
     print(f"\nLog do loop: {log_path}")
     return 0
@@ -260,23 +275,87 @@ def _render_noticias(itens: list[dict]) -> str:
     return "\n".join(linhas)
 
 
-def pautas() -> int:
-    settings = get_settings()
+def _gerar_pautas(settings, vistas: set[str] | None = None, enfileirar: bool = True) -> int:
     from .tools.sources import carregar_itens_rss, filtrar_relevantes
+    from .vault import queue as fila
     from .vault.entidades import nomes_entidades
+
+    if vistas is None:
+        vistas = set()
 
     itens = carregar_itens_rss()
     relevantes = filtrar_relevantes(itens, nomes_entidades())
-    if not relevantes:
-        print("Nenhuma manchete relevante nas fontes agora.")
+
+    novos: list[dict] = []
+    usados: set[str] = set()
+    for item in relevantes:
+        link = item.get("link", "")
+        if not link or link in vistas or link in usados:
+            continue
+        usados.add(link)
+        novos.append(item)
+
+    if not novos:
+        print(f"[{_ts()}] pautas: nenhuma manchete nova relevante.", flush=True)
         return 0
-    print(f"[{_ts()}] {len(relevantes)} manchete(s) relevante(s); gerando pautas...", flush=True)
+
+    print(f"[{_ts()}] {len(novos)} manchete(s) nova(s); gerando pautas...", flush=True)
     crew = build_pautas_crew(settings, step_callback=_step_cb)
-    result = crew.kickoff(inputs={"noticias": _render_noticias(relevantes)})
+    result = crew.kickoff(inputs={"noticias": _render_noticias(novos)})
     text = getattr(result, "raw", str(result))
+    pacote = getattr(result, "pydantic", None)
+    tem_pacote = pacote is not None and bool(getattr(pacote, "itens", None))
+    if tem_pacote:
+        text = _render_pautas_md(pacote)
     print(text)
-    path = save_output(text, settings.output_dir, "pautas")
+    path = save_output(text, settings.output_dir, "pautas", "pautas")
     print(f"\nPautas salvas em: {path}")
+    vistas.update(usados)
+
+    if tem_pacote:
+        print(f"Pautas (json) em: {entregaveis.salvar_pautas_json(pacote)}")
+        if enfileirar:
+            print(f"Alvos enfileirados a partir das pautas: {_enfileirar_pautas(pacote, fila)}")
+    else:
+        print("(o modelo nao devolveu pautas estruturadas; json/enfileiramento pulados)")
+
+    return len(novos)
+
+
+def _render_pautas_md(pacote) -> str:
+    linhas: list[str] = []
+    for i, p in enumerate(pacote.itens, 1):
+        linhas.append(f"## Pauta {i}: {getattr(p, 'manchete', '')}")
+        linhas.append(f"- **Angulo:** {getattr(p, 'angulo', '')}")
+        if getattr(p, "entidades", None):
+            linhas.append(f"- **Entidades do grafo:** {', '.join(p.entidades)}")
+        if getattr(p, "alvos_pesquisa", None):
+            linhas.append(f"- **Alvos a pesquisar:** {', '.join(p.alvos_pesquisa)}")
+        if getattr(p, "source_url", ""):
+            linhas.append(f"- **Fonte:** {p.source_url}")
+        linhas.append("")
+    return "\n".join(linhas).strip()
+
+
+def _enfileirar_pautas(pacote, fila) -> int:
+    total = 0
+    for pauta in getattr(pacote, "itens", []) or []:
+        motivo = f"pauta: {getattr(pauta, 'manchete', '')}"[:120]
+        alvos = list(getattr(pauta, "alvos_pesquisa", None) or []) + list(
+            getattr(pauta, "entidades", None) or []
+        )
+        for alvo in alvos:
+            nome = str(alvo).strip().strip("[]").strip()
+            if not nome:
+                continue
+            if fila.add_item(nome, motivo, 3, 0, "pautas"):
+                total += 1
+    return total
+
+
+def pautas() -> int:
+    ensure_vault()
+    _gerar_pautas(get_settings(), set())
     return 0
 
 
@@ -363,7 +442,13 @@ def main() -> int:
     sub = parser.add_subparsers(dest="comando", required=True)
 
     p_run = sub.add_parser("run", help="Executa o pipeline de conteudo")
-    p_run.add_argument("--tema", required=True, help="Tema da pesquisa")
+    p_run.add_argument("--tema", default="", help="Tema da pesquisa")
+    p_run.add_argument(
+        "--pautas",
+        type=int,
+        default=0,
+        help="Usa a pauta N do pautas.json mais recente (em vez de --tema)",
+    )
     p_run.add_argument(
         "--saidas",
         default="",
@@ -378,6 +463,12 @@ def main() -> int:
     p_pesq.add_argument("--limite", type=int, default=0, help="Itens a processar (0 = esvaziar)")
     p_pesq.add_argument("--horas", type=float, default=0.0, help="Roda como daemon por N horas")
     p_pesq.add_argument("--lote", type=int, default=10, help="Itens por lote no modo --horas")
+    p_pesq.add_argument(
+        "--pautas-cada",
+        type=int,
+        default=1,
+        help="Gera pautas a cada N lotes no daemon (0 = desliga)",
+    )
 
     p_enq = sub.add_parser("enfileirar", help="Adiciona um alvo a fila de pesquisa")
     p_enq.add_argument("alvo", help="Pessoa, instituicao ou tema")
@@ -417,13 +508,25 @@ def main() -> int:
 
     args = parser.parse_args()
     if args.comando == "run":
-        return run(args.tema, args.saidas)
+        tema = args.tema
+        if args.pautas:
+            itens = entregaveis.carregar_pautas()
+            if args.pautas < 1 or args.pautas > len(itens):
+                print(f"Pauta {args.pautas} indisponivel (ha {len(itens)}). Rode 'pautas' antes.")
+                return 1
+            pauta = itens[args.pautas - 1]
+            tema = f"{pauta.get('manchete', '')} — {pauta.get('angulo', '')}".strip(" —")
+            print(f"run --pautas {args.pautas}: tema = {tema!r}")
+        if not tema.strip():
+            print('Informe --tema "..." ou --pautas N.')
+            return 1
+        return run(tema, args.saidas)
     if args.comando == "investigar":
         return investigar()
     if args.comando == "pautas":
         return pautas()
     if args.comando == "pesquisar":
-        return pesquisar(args.limite, args.horas, args.lote)
+        return pesquisar(args.limite, args.horas, args.lote, args.pautas_cada)
     if args.comando == "enfileirar":
         return enfileirar(args.alvo, args.motivo, args.prioridade)
     if args.comando == "agenda":
