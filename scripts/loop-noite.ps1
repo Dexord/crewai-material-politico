@@ -12,9 +12,9 @@ $env:PYTHONUNBUFFERED = "1"
 Write-Host "== Loop noturno: $Horas h (lote=$Lote) ==" -ForegroundColor Cyan
 Write-Host "A saida dos agentes aparece AO VIVO abaixo."
 
-Write-Host "Impedindo suspensao/hibernacao do PC..."
-powercfg /change standby-timeout-ac 0
-powercfg /change hibernate-timeout-ac 0
+# Write-Host "Impedindo suspensao/hibernacao do PC..."
+# powercfg /change standby-timeout-ac 0
+# powercfg /change hibernate-timeout-ac 0
 
 Write-Host "Aquecendo o Ollama..."
 ollama run qwen3.5:9b "ok" | Out-Null

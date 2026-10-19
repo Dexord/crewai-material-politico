@@ -216,6 +216,9 @@ def _daemon(settings, horas: float, lote: int, pautas_cada: int = 1) -> int:
     total = 0
     ciclos = 0
     vistas: set[str] = set()
+    for p in entregaveis.carregar_pautas(max_itens=0):
+        if p.get("source_url"):
+            vistas.add(p["source_url"])
 
     while datetime.now() < deadline:
         if fila.pending_count() == 0:
@@ -313,7 +316,8 @@ def _gerar_pautas(settings, vistas: set[str] | None = None, enfileirar: bool = T
     vistas.update(usados)
 
     if tem_pacote:
-        print(f"Pautas (json) em: {entregaveis.salvar_pautas_json(pacote)}")
+        n_novas = entregaveis.acrescentar_pautas(pacote)
+        print(f"Pautas na fila: +{n_novas} (limite {entregaveis.PAUTAS_MAX}).")
         if enfileirar:
             print(f"Alvos enfileirados a partir das pautas: {_enfileirar_pautas(pacote, fila)}")
     else:
@@ -351,6 +355,50 @@ def _enfileirar_pautas(pacote, fila) -> int:
             if fila.add_item(nome, motivo, 3, 0, "pautas"):
                 total += 1
     return total
+
+
+def _listar_pautas() -> int:
+    itens = entregaveis.carregar_pautas(max_itens=0)
+    if not itens:
+        print("Fila de pautas vazia. Rode 'pautas' antes.")
+        return 0
+    print(f"Fila de pautas ({len(itens)}; mais recente primeiro):")
+    for i, p in enumerate(itens, 1):
+        print(f"{i:>2}. [{p.get('criado_em', '')}] {p.get('manchete', '')}")
+        if p.get("angulo"):
+            print(f"      angulo: {p['angulo']}")
+        if p.get("source_url"):
+            print(f"      fonte:  {p['source_url']}")
+    return 0
+
+
+def _selecionar_pautas(spec: str) -> list[dict]:
+    itens = entregaveis.carregar_pautas(max_itens=0)
+    if not itens:
+        return []
+    s = spec.strip().lower().replace(" ", "-")
+    if s in ("ultima", "ultimas", "ultimas-1"):
+        return itens[:1]
+    if s.startswith("ultimas-"):
+        try:
+            k = int(s.split("-", 1)[1])
+        except ValueError:
+            return []
+        return itens[: max(0, k)]
+    if s in ("todas", "tudo", "all", "*"):
+        return list(itens)
+    if "-" in s:
+        try:
+            a, b = (int(x) for x in s.split("-", 1))
+        except ValueError:
+            return []
+        lo, hi = min(a, b), max(a, b)
+        return [itens[i - 1] for i in range(lo, hi + 1) if 1 <= i <= len(itens)]
+    try:
+        n = int(s)
+    except ValueError:
+        return []
+    return [itens[n - 1]] if 1 <= n <= len(itens) else []
 
 
 def pautas() -> int:
@@ -445,9 +493,8 @@ def main() -> int:
     p_run.add_argument("--tema", default="", help="Tema da pesquisa")
     p_run.add_argument(
         "--pautas",
-        type=int,
-        default=0,
-        help="Usa a pauta N do pautas.json mais recente (em vez de --tema)",
+        default="",
+        help="Selecao de pautas: listar | N | A-B | ultimas-K | todas (1 = mais recente)",
     )
     p_run.add_argument(
         "--saidas",
@@ -508,17 +555,35 @@ def main() -> int:
 
     args = parser.parse_args()
     if args.comando == "run":
-        tema = args.tema
-        if args.pautas:
-            itens = entregaveis.carregar_pautas()
-            if args.pautas < 1 or args.pautas > len(itens):
-                print(f"Pauta {args.pautas} indisponivel (ha {len(itens)}). Rode 'pautas' antes.")
+        spec = (args.pautas or "").strip()
+        if spec:
+            if spec.lower() in ("listar", "list", "ls"):
+                return _listar_pautas()
+            selecionadas = _selecionar_pautas(spec)
+            if not selecionadas:
+                print(f"Nenhuma pauta para '{spec}'. Use 'run --pautas listar'.")
                 return 1
-            pauta = itens[args.pautas - 1]
-            tema = f"{pauta.get('manchete', '')} — {pauta.get('angulo', '')}".strip(" —")
-            print(f"run --pautas {args.pautas}: tema = {tema!r}")
+            saidas = args.saidas or "todas"
+            print(f"run --pautas {spec}: {len(selecionadas)} pauta(s); saidas={saidas}")
+            rc = 0
+            for i, pauta in enumerate(selecionadas, 1):
+                tema = f"{pauta.get('manchete', '')} — {pauta.get('angulo', '')}".strip(" —")
+                print(f"\n=== [{i}/{len(selecionadas)}] pauta {pauta.get('id', '')}: {tema!r} ===")
+                try:
+                    code = run(tema, saidas)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"!!! erro na pauta {pauta.get('id', '')}: {exc}")
+                    code = 1
+                if code == 0:
+                    chave = pauta.get("id") or pauta.get("manchete", "")
+                    entregaveis.remover_pauta(chave)
+                    print(f"Pauta consumida e removida da fila: {chave}")
+                else:
+                    rc = code
+            return rc
+        tema = args.tema
         if not tema.strip():
-            print('Informe --tema "..." ou --pautas N.')
+            print('Informe --tema "..." ou --pautas <selecao>.')
             return 1
         return run(tema, args.saidas)
     if args.comando == "investigar":

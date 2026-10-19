@@ -113,22 +113,66 @@ def _pautas_dir() -> Path:
     return Path(get_settings().output_dir) / "pautas"
 
 
-def salvar_pautas_json(pacote: PacotePautas) -> Path:
+PAUTAS_MAX = 10
+
+
+def _pautas_path() -> Path:
+    return _pautas_dir() / "pautas.json"
+
+
+def _salvar_lista_pautas(itens: list[dict]) -> Path:
     out = _pautas_dir()
     out.mkdir(parents=True, exist_ok=True)
-    path = out / "pautas.json"
-    path.write_text(json.dumps(pacote.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8")
+    path = _pautas_path()
+    path.write_text(
+        json.dumps({"itens": itens}, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return path
 
 
-def carregar_pautas() -> list[dict]:
-    path = _pautas_dir() / "pautas.json"
+def carregar_pautas(max_itens: int = PAUTAS_MAX) -> list[dict]:
+    """Le a fila de pautas (mais recente primeiro). max_itens<=0 = sem limite."""
+    path = _pautas_path()
     if not path.exists():
         return []
     try:
-        return json.loads(path.read_text(encoding="utf-8")).get("itens", [])
+        itens = json.loads(path.read_text(encoding="utf-8")).get("itens", [])
     except json.JSONDecodeError:
         return []
+    return itens if max_itens <= 0 else itens[:max_itens]
+
+
+def acrescentar_pautas(pacote: PacotePautas) -> int:
+    """Adiciona as novas pautas no topo (FILO), dedupe por manchete, com corte em PAUTAS_MAX."""
+    existentes = carregar_pautas(max_itens=0)
+    chaves = {_slug(p.get("manchete", "")) for p in existentes}
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    novas: list[dict] = []
+    for i, p in enumerate(pacote.itens, 1):
+        chave = _slug(p.manchete)
+        if not chave or chave in chaves:
+            continue
+        chaves.add(chave)
+        item = p.model_dump()
+        item["id"] = f"pauta-{stamp}-{i}"
+        item["criado_em"] = f"{datetime.now():%Y-%m-%d %H:%M:%S}"
+        novas.append(item)
+    if not novas:
+        return 0
+    _salvar_lista_pautas((novas + existentes)[:PAUTAS_MAX])
+    return len(novas)
+
+
+def remover_pauta(chave: str) -> bool:
+    """Remove a pauta por 'id' ou, no formato antigo, pela manchete."""
+    if not chave:
+        return False
+    existentes = carregar_pautas(max_itens=0)
+    restantes = [p for p in existentes if chave not in (p.get("id"), p.get("manchete"))]
+    if len(restantes) == len(existentes):
+        return False
+    _salvar_lista_pautas(restantes)
+    return True
 
 
 def _slug(text: str) -> str:

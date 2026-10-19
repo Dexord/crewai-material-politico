@@ -35,7 +35,11 @@ uv sync                                          # instalar/atualizar deps
 
 # Fluxo de conteudo (pipeline sequencial de 4 agentes)
 uv run python -m src.main run --tema "<tema>"
-uv run python -m src.main run --pautas 3          # usa a pauta 3 do pautas.json mais recente
+uv run python -m src.main run --pautas listar      # lista a fila de pautas
+uv run python -m src.main run --pautas 3           # consome so a pauta 3
+uv run python -m src.main run --pautas 1-5         # batch: pautas 1 a 5
+uv run python -m src.main run --pautas ultimas-5   # alias de 1-5
+uv run python -m src.main run --pautas todas       # todas as da fila (ate 10)
 
 # Grafo de conhecimento (F2a)
 uv run python -m src.main investigar             # estrutura o vault + mantem a fila
@@ -171,8 +175,13 @@ Complementa o fluxo proativo (grafo) com material **fresco** do noticiário.
 
 As pautas também são **estruturadas** (`PacotePautas`): além de `entidades` (do grafo), cada pauta
 traz `alvos_pesquisa` (nomes/temas ainda sem nota) — que o `pautas` **enfileira** no vault,
-fechando o ciclo `pautas -> fila -> daemon`. Para virar conteúdo sem digitar o tema:
-`run --pautas N` usa a pauta N do `data/output/pautas/pautas.json` como tema.
+fechando o ciclo `pautas -> fila -> daemon`.
+
+A fila de pautas é o **`data/output/pautas/pautas.json`**: uma fila **FILO capada em 10** (mais
+recente no topo; insere com **dedupe por manchete** e descarta as mais antigas acima de 10). O
+consumo é por `run --pautas <selecao>` (1 = mais recente): `listar` | `N` | `A-B` | `ultimas-K` |
+`todas`. Por padrão o `run --pautas` roda **saída completa** (`--saidas todas`); ao terminar com
+sucesso, a pauta é **removida** da fila (são efêmeras).
 
 O mesmo gerador é chamado **dentro do daemon** (`pesquisar --horas ... --pautas-cada K`, ver
 "Loop autonomo") ao fim de cada lote, com **dedupe por `source_url`** entre chamadas da mesma
@@ -293,7 +302,8 @@ Cada linha (ciclos, inicio/fim de agente, passos e itens) sai com timestamp
 - Ciclo: fila vazia → roda o investigador; senão → processa um lote (`--lote`, default 10).
 - **Pautas no loop**: ao fim de cada lote, o daemon chama o **gerador de pautas** (`--pautas-cada`,
   default `1`; `0` desliga). Roda no **mesmo processo** (modelo já carregado) e no **mesmo log**.
-  Manchetes já usadas não repetem dentro da execução (dedupe por `source_url`, escopo por run).
+  Manchetes já usadas não repetem: o dedupe por `source_url` é semeado pelo `pautas.json` no start
+  e mantido por execução.
 - Encerra ao fim do tempo (`--horas`) ou após 3 ciclos sem novidades (saturação).
 - `BLACKLIST_ALVOS` (`.env`) evita o auto-enfileiramento de alvos como o próprio candidato;
   `enfileirar` explícito ignora a blacklist.
