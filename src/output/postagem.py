@@ -12,7 +12,7 @@ DISCLOSURE = "Conteúdo gerado por IA - verificar antes de publicar."
 
 
 def _fila_path() -> Path:
-    return Path(get_settings().output_dir) / "fila-postagem.json"
+    return Path(get_settings().estado_dir) / "postagem.json"
 
 
 def _postagens_dir() -> Path:

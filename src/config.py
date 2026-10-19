@@ -12,10 +12,14 @@ class Settings(BaseSettings):
     ollama_model: str = "qwen3.5:9b"
     ollama_model_escrita: str = "gemma4:e4b"
     output_dir: str = "data/output"
+    estado_dir: str = "data/estado"
     scrape_rate_limit: float = 1.5
     vault_dir: str = "data/vault"
     max_depth: int = 3
-    blacklist_alvos: str = "Flavio Bolsonaro"
+    blacklist_alvos: str = ""
+    frescor_dias: int = 4
+    revisitar_top: int = 10
+    revisitar_aleatorio: int = 3
 
 
 @lru_cache

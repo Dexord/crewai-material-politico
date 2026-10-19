@@ -154,6 +154,7 @@ def _processar_item(item: dict, settings) -> bool:
                 "motivo": item.get("motivo", ""),
                 "profundidade": item.get("profundidade", 0),
                 "max_depth": settings.max_depth,
+                "desde": item.get("desde", ""),
             }
         )
         text = getattr(result, "raw", str(result))
@@ -170,13 +171,30 @@ def _processar_item(item: dict, settings) -> bool:
         return False
 
 
-def pesquisar(limite: int = 0, horas: float = 0.0, lote: int = 10, pautas_cada: int = 1) -> int:
+def pesquisar(
+    limite: int = 0,
+    horas: float = 0.0,
+    lote: int = 10,
+    pautas_cada: int = 1,
+    revisitar: bool = False,
+    dias: int | None = None,
+    top: int | None = None,
+    aleatorio: int | None = None,
+) -> int:
     settings = get_settings()
     ensure_vault()
 
     orfaos = fila.reset_em_andamento()
     if orfaos:
         print(f"Retomando {orfaos} item(ns) orfao(s) (em_andamento -> pendente).")
+
+    if revisitar:
+        criados = fila.revisitar(dias, top, aleatorio)
+        print(f"Revisita: {len(criados)} alvo(s) enfileirado(s).")
+        for c in criados:
+            print(f"  - {c['alvo']} (ultima coleta: {c['desde'] or 'nunca'})")
+        if not horas and not limite:
+            return 0
 
     if horas and horas > 0:
         return _daemon(settings, horas, lote, pautas_cada)
@@ -222,21 +240,29 @@ def _daemon(settings, horas: float, lote: int, pautas_cada: int = 1) -> int:
 
     while datetime.now() < deadline:
         if fila.pending_count() == 0:
-            dry += 1
-            log(f"fila vazia -> rodando investigador (dry={dry})")
             try:
-                log(">>> agente investigador (inicio)")
-                build_investigador_crew(settings, step_callback=_step_cb).kickoff()
-                log("<<< agente investigador (fim)")
+                revisitas = fila.revisitar()
             except Exception as exc:  # noqa: BLE001
-                log(f"!!! erro no investigador: {exc}")
-            if fila.pending_count() == 0:
-                if dry >= 3:
-                    log("saturado (3 ciclos sem novidades). Encerrando.")
-                    break
-                log("ainda vazio; aguardando 300s.")
-                time.sleep(300)
-                continue
+                revisitas = []
+                log(f"!!! erro na revisita: {exc}")
+            if revisitas:
+                log(f"fila vazia -> revisita enfileirou {len(revisitas)} alvo(s)")
+            else:
+                dry += 1
+                log(f"fila vazia -> rodando investigador (dry={dry})")
+                try:
+                    log(">>> agente investigador (inicio)")
+                    build_investigador_crew(settings, step_callback=_step_cb).kickoff()
+                    log("<<< agente investigador (fim)")
+                except Exception as exc:  # noqa: BLE001
+                    log(f"!!! erro no investigador: {exc}")
+                if fila.pending_count() == 0:
+                    if dry >= 3:
+                        log("saturado (3 ciclos sem novidades). Encerrando.")
+                        break
+                    log("ainda vazio; aguardando 300s.")
+                    time.sleep(300)
+                    continue
 
         dry = 0
         processados_lote = 0
@@ -345,9 +371,7 @@ def _enfileirar_pautas(pacote, fila) -> int:
     total = 0
     for pauta in getattr(pacote, "itens", []) or []:
         motivo = f"pauta: {getattr(pauta, 'manchete', '')}"[:120]
-        alvos = list(getattr(pauta, "alvos_pesquisa", None) or []) + list(
-            getattr(pauta, "entidades", None) or []
-        )
+        alvos = list(getattr(pauta, "alvos_pesquisa", None) or [])
         for alvo in alvos:
             nome = str(alvo).strip().strip("[]").strip()
             if not nome:
@@ -434,6 +458,81 @@ def fila_limpar(aplicar: bool = False) -> int:
     return 0
 
 
+def migrar_filas(aplicar: bool = False) -> int:
+    import json as _json
+
+    from .vault.vault import all_notes
+
+    settings = get_settings()
+    estado = Path(settings.estado_dir)
+
+    def _ler(caminho: Path, chave: str) -> list[dict]:
+        if not caminho.exists():
+            return []
+        try:
+            return _json.loads(caminho.read_text(encoding="utf-8")).get(chave, [])
+        except Exception:  # noqa: BLE001
+            return []
+
+    notas = []
+    for fm, _, _ in all_notes("fila"):
+        status = fm.get("status", "pendente")
+        criado = fm.get("criado_em", "")
+        notas.append(
+            {
+                "id": fm.get("id", ""),
+                "tipo": "fila",
+                "status": status,
+                "prioridade": fm.get("prioridade", 3),
+                "profundidade": fm.get("profundidade", 0),
+                "alvo": fm.get("alvo", ""),
+                "motivo": fm.get("motivo", ""),
+                "origem": fm.get("origem", ""),
+                "criado_em": criado,
+                "concluido_em": criado if status == "concluido" else "",
+                "tentativas": int(fm.get("tentativas", 0) or 0),
+                "desde": "",
+            }
+        )
+
+    destino_pesquisa = estado / "pesquisa.json"
+    if destino_pesquisa.exists():
+        existentes = _ler(destino_pesquisa, "itens")
+        ids = {i.get("id") for i in existentes}
+        pesquisa = existentes + [n for n in notas if n.get("id") not in ids]
+    else:
+        pesquisa = notas
+
+    pautas_old = Path(settings.output_dir) / "pautas" / "pautas.json"
+    destino_pautas = estado / "pautas.json"
+    pautas = _ler(destino_pautas, "itens") or _ler(pautas_old, "itens")
+
+    post_old = Path(settings.output_dir) / "fila-postagem.json"
+    destino_post = estado / "postagem.json"
+    postagem = _ler(destino_post, "pecas") or _ler(post_old, "pecas")
+
+    print(f"pesquisa: {len(pesquisa)} item(ns) -> {destino_pesquisa}")
+    print(f"pautas:   {len(pautas)} item(ns) -> {destino_pautas}")
+    print(f"postagem: {len(postagem)} peca(s) -> {destino_post}")
+
+    if not aplicar:
+        print("\n(dry-run) Nada foi alterado. Use --aplicar.")
+        return 0
+
+    estado.mkdir(parents=True, exist_ok=True)
+    destino_pesquisa.write_text(
+        _json.dumps({"itens": pesquisa}, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    destino_pautas.write_text(
+        _json.dumps({"itens": pautas}, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    destino_post.write_text(
+        _json.dumps({"pecas": postagem}, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(f"\nMigrado para: {estado}")
+    return 0
+
+
 def deduplicar_cmd(aplicar: bool = False) -> int:
     res = deduplicar(aplicar=aplicar)
     plano = res["plano"]
@@ -516,6 +615,14 @@ def main() -> int:
         default=1,
         help="Gera pautas a cada N lotes no daemon (0 = desliga)",
     )
+    p_pesq.add_argument(
+        "--revisitar",
+        action="store_true",
+        help="Enfileira revisitas de alvos velhos (top-N por centralidade + aleatorios)",
+    )
+    p_pesq.add_argument("--dias", type=int, default=None, help="Idade minima (dias) p/ revisitar")
+    p_pesq.add_argument("--top", type=int, default=None, help="Quantos alvos por centralidade")
+    p_pesq.add_argument("--aleatorio", type=int, default=None, help="Quantos alvos aleatorios")
 
     p_enq = sub.add_parser("enfileirar", help="Adiciona um alvo a fila de pesquisa")
     p_enq.add_argument("alvo", help="Pessoa, instituicao ou tema")
@@ -552,6 +659,11 @@ def main() -> int:
         "fila-limpar", help="Lista/marca itens de fila ja pesquisados ou duplicados"
     )
     p_flim.add_argument("--aplicar", action="store_true", help="Marca como ignorado")
+
+    p_mf = sub.add_parser(
+        "migrar-filas", help="Migra as filas antigas para data/estado/*.json"
+    )
+    p_mf.add_argument("--aplicar", action="store_true", help="Aplica a migracao")
 
     args = parser.parse_args()
     if args.comando == "run":
@@ -591,7 +703,16 @@ def main() -> int:
     if args.comando == "pautas":
         return pautas()
     if args.comando == "pesquisar":
-        return pesquisar(args.limite, args.horas, args.lote, args.pautas_cada)
+        return pesquisar(
+            args.limite,
+            args.horas,
+            args.lote,
+            args.pautas_cada,
+            args.revisitar,
+            args.dias,
+            args.top,
+            args.aleatorio,
+        )
     if args.comando == "enfileirar":
         return enfileirar(args.alvo, args.motivo, args.prioridade)
     if args.comando == "agenda":
@@ -610,6 +731,8 @@ def main() -> int:
         return fundir_cmd(args.a, args.b)
     if args.comando == "fila-limpar":
         return fila_limpar(args.aplicar)
+    if args.comando == "migrar-filas":
+        return migrar_filas(args.aplicar)
     return 1
 
 

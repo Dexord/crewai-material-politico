@@ -44,11 +44,15 @@ uv run python -m src.main run --pautas todas       # todas as da fila (ate 10)
 # Grafo de conhecimento (F2a)
 uv run python -m src.main investigar             # estrutura o vault + mantem a fila
 uv run python -m src.main pesquisar --limite N   # consome a fila (0 = esvazia)
+uv run python -m src.main pesquisar --revisitar [--dias 4] [--top 10] [--aleatorio 3]
 uv run python -m src.main enfileirar "<alvo>" [--motivo "..."] [--prioridade 3]
 uv run python -m src.main pautas                 # pautas a partir das manchetes atuais dos RSS
 
 # Limpeza da fila de pesquisa (dry-run por padrao): itens ja pesquisados/duplicados
 uv run python -m src.main fila-limpar [--aplicar]
+
+# Migra as filas antigas (notas) para data/estado/*.json (dry-run por padrao)
+uv run python -m src.main migrar-filas [--aplicar]
 
 # Migracao de entidades (pessoa -> organizacao); dry-run por padrao
 uv run python -m src.main migrar-organizacoes [--aplicar] [--duvidosos]
@@ -74,9 +78,10 @@ uv run python -m src.main publicar <id>                # aprovado -> publicado
 ```
 
 Saída do `run`: markdown timestampado em `data/output/runs/` (gitignored).
-Estrutura de `data/output/`: `runs/` (run), `pautas/` (pautas + `pautas.json`),
-`investigacoes/`, `pesquisas/`, `entregaveis/` (video/reportagem/redes), `postagens/` +
-`fila-postagem.json`, e os `loop-*.log`. Tudo sob `OUTPUT_DIR`.
+Estrutura de `data/output/`: `runs/`, `pautas/` (histórico .md), `investigacoes/`, `pesquisas/`,
+`entregaveis/`, `postagens/` e os `loop-*.log` (tudo sob `OUTPUT_DIR`).
+Estado (filas JSON): `data/estado/` — `pesquisa.json`, `pautas.json`, `postagem.json` (+
+`material.json` na Fase 4).
 Vault (grafo): `data/vault/` (gitignored) — abra como vault no Obsidian.
 
 Checagem rápida do provider / VRAM:
@@ -150,10 +155,17 @@ Loop noturno: `investigar` (estrutura + fila) → `pesquisar --limite N` (driver
 consome a fila: pega item pendente de maior prioridade/menor profundidade, roda o pesquisador,
 marca `concluido`). Dedupe automático por `alvo`; itens acima de `MAX_DEPTH` são ignorados.
 
-Dedupe da fila: `queue.add_item` usa chave canônica (`entidades.chave`, sem acento/honorífico/
-partícula/sufixo/parentese) e **pula alvos já cobertos por uma entidade existente no vault**
-(`entidades.coberto`, prefixo de tokens). `fila-limpar` marca como `ignorado` os pendentes já
-pesquisados, já concluídos ou duplicados (dry-run + `--aplicar`).
+Dedupe da fila (frescor): `queue.add_item` usa chave canônica (`entidades.chave`, sem acento/
+honorífico/partícula/sufixo/parentese). Ele **não bloqueia para sempre**: pula só se houver item
+**ativo** (pendente/em_andamento) ou um `concluido` com `concluido_em` **recente**
+(< `FRESCOR_DIAS`, default **4**). `coberto()` bloqueia apenas alvo novo; revisitas passam.
+`fila-limpar` marca como `ignorado` os pendentes já pesquisados/duplicados (dry-run + `--aplicar`).
+
+Revisita (novidades): `pesquisar --revisitar [--dias 4] [--top 10] [--aleatorio 3]` enfileira
+alvos **velhos** — **top-N por centralidade** (`index.most_connected`) **+ M aleatórios** (para
+achar furos). O item leva `desde` = data da última coleta, e o pesquisador é instruído a buscar
+**novidades publicadas após essa data**. No daemon, ao esvaziar a fila ele **tenta a revisita
+antes** do investigador/saturação.
 
 Prioridade (1–5, default 3): definida pelo investigador (`adicionar_fila`). Rubrica: quanto
 maior a chance de escândalo sério / possível crime (legislação brasileira) envolvendo a
@@ -162,7 +174,8 @@ família Bolsonaro, maior a prioridade (5 = crime grave/lesão ao erário ligado
 `next_item` ordena por prioridade desc → profundidade asc → mais antigo.
 
 Aprofundamento do grafo: o investigador usa `listar_dangling` (alvos citados **sem nota**,
-ordenados por centralidade) e os enfileira como **sementes** (`profundidade 0`). Assim o grafo
+ordenados por centralidade) e os enfileira como **sementes** (`profundidade 0`). O
+`listar_dangling` **filtra siglas/aliases que já resolvem** para uma entidade existente. Assim o grafo
 cresce em largura e profundidade mesmo quando a expansão "nome em nome" satura.
 
 ### Criador de Pauta (`pautas`) — gatilho por notícia
@@ -177,7 +190,7 @@ As pautas também são **estruturadas** (`PacotePautas`): além de `entidades` (
 traz `alvos_pesquisa` (nomes/temas ainda sem nota) — que o `pautas` **enfileira** no vault,
 fechando o ciclo `pautas -> fila -> daemon`.
 
-A fila de pautas é o **`data/output/pautas/pautas.json`**: uma fila **FILO capada em 10** (mais
+A fila de pautas é o **`data/estado/pautas.json`**: uma fila **FILO capada em 10** (mais
 recente no topo; insere com **dedupe por manchete** e descarta as mais antigas acima de 10). O
 consumo é por `run --pautas <selecao>` (1 = mais recente): `listar` | `N` | `A-B` | `ultimas-K` |
 `todas`. Por padrão o `run --pautas` roda **saída completa** (`--saidas todas`); ao terminar com
@@ -286,7 +299,7 @@ O campo `individualidade` (a lente autointeressada: "o que EU ganho/perco") vive
 `profiles.yaml`, entao da para calibrar por perfil sem mexer no codigo.
 
 Saidas em `data/output/entregaveis/` (video, reportagem) e na fila de postagem
-`data/output/fila-postagem.json` + `data/output/postagens/<id>.txt` (ciclo
+`data/estado/postagem.json` + `data/output/postagens/<id>.txt` (ciclo
 `rascunho -> aprovado -> publicado`; comandos `agenda`/`aprovar`/`publicar`). **Sem** `.ics`,
 Task Scheduler ou auto-post (deixados como plugaveis no futuro).
 

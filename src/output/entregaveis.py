@@ -110,7 +110,7 @@ class PacotePautas(BaseModel):
 
 
 def _pautas_dir() -> Path:
-    return Path(get_settings().output_dir) / "pautas"
+    return Path(get_settings().estado_dir)
 
 
 PAUTAS_MAX = 10
@@ -121,9 +121,8 @@ def _pautas_path() -> Path:
 
 
 def _salvar_lista_pautas(itens: list[dict]) -> Path:
-    out = _pautas_dir()
-    out.mkdir(parents=True, exist_ok=True)
     path = _pautas_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps({"itens": itens}, ensure_ascii=False, indent=2), encoding="utf-8"
     )

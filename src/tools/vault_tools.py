@@ -385,7 +385,8 @@ def listar_dangling(limite: int = 40) -> str:
     """Lista alvos (pessoas/instituicoes) citados no grafo SEM nota — lacunas a pesquisar.
 
     Ordenado por centralidade (numero de notas que citam o alvo). Use para enfileirar
-    alvos como SEMENTES (profundidade 0) e aprofundar o grafo.
+    alvos como SEMENTES (profundidade 0) e aprofundar o grafo. Siglas e nomes que ja
+    resolvem para uma entidade existente (ou cobertos por ela) sao filtrados.
 
     Args:
         limite: Quantidade maxima de alvos (padrao 40).
@@ -393,13 +394,25 @@ def listar_dangling(limite: int = 40) -> str:
     Returns:
         Lista de alvos sem nota, com id e numero de citacoes.
     """
-    alvos = graph_index.dangling(limite)
+    brutos = graph_index.dangling(max(limite * 4, limite))
+    alvos = [a for a in brutos if not _alvo_coberto(a)][:limite]
     if not alvos:
-        return "Nenhum alvo citado sem nota."
+        return "Nenhum alvo novo citado sem nota (apos filtrar siglas/cobertos)."
     lines = [
         f"- {a['nome']} (id: {a['id']}) — citado em {a['citacoes']} notas" for a in alvos
     ]
     return "Alvos citados sem nota (candidatos a pesquisa como semente):\n" + "\n".join(lines)
+
+
+def _alvo_coberto(alvo: dict) -> bool:
+    for chave in (alvo.get("nome", ""), alvo.get("id", "")):
+        if not chave:
+            continue
+        if entidades.coberto(chave):
+            return True
+        if entidades.resolver(chave):
+            return True
+    return False
 
 
 @tool("adicionar_fila")
