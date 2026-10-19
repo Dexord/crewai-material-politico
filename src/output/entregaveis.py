@@ -174,6 +174,47 @@ def remover_pauta(chave: str) -> bool:
     return True
 
 
+def _materiais_path() -> Path:
+    return Path(get_settings().estado_dir) / "material.json"
+
+
+def listar_materiais(max_itens: int = 50) -> list[dict]:
+    path = _materiais_path()
+    if not path.exists():
+        return []
+    try:
+        itens = json.loads(path.read_text(encoding="utf-8")).get("itens", [])
+    except json.JSONDecodeError:
+        return []
+    return itens if max_itens <= 0 else itens[:max_itens]
+
+
+def registrar_material(
+    tema: str,
+    run_path: str = "",
+    pauta_id: str = "",
+    entregaveis_paths: list[str] | None = None,
+) -> dict:
+    itens = listar_materiais(max_itens=0)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    item = {
+        "id": f"material-{stamp}-{_slug(tema)[:24]}",
+        "tema": tema,
+        "pauta_id": pauta_id or "",
+        "criado_em": f"{datetime.now():%Y-%m-%d %H:%M:%S}",
+        "run_path": str(run_path or ""),
+        "entregaveis": [str(p) for p in (entregaveis_paths or [])],
+        "status": "gerado",
+    }
+    itens.insert(0, item)
+    path = _materiais_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"itens": itens}, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return item
+
+
 def _slug(text: str) -> str:
     text = unicodedata.normalize("NFKD", str(text))
     text = text.encode("ascii", "ignore").decode("ascii").lower()

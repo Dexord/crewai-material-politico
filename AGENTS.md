@@ -33,20 +33,25 @@ pequena) — ver seção F2b.
 ```powershell
 uv sync                                          # instalar/atualizar deps
 
-# Fluxo de conteudo (pipeline sequencial de 4 agentes)
-uv run python -m src.main run --tema "<tema>"
-uv run python -m src.main run --pautas listar      # lista a fila de pautas
-uv run python -m src.main run --pautas 3           # consome so a pauta 3
-uv run python -m src.main run --pautas 1-5         # batch: pautas 1 a 5
-uv run python -m src.main run --pautas ultimas-5   # alias de 1-5
-uv run python -m src.main run --pautas todas       # todas as da fila (ate 10)
+# Material (pipeline sequencial de 4 agentes)
+uv run python -m src.main gerar-material --tema "<tema>"       # fura a fila de pautas
+uv run python -m src.main gerar-material --pautas 3            # consome so a pauta 3
+uv run python -m src.main gerar-material --pautas 1-5          # batch: pautas 1 a 5
+uv run python -m src.main gerar-material --pautas ultimas-5    # alias de 1-5
+uv run python -m src.main gerar-material --pautas todas        # todas as da fila (ate 10)
+uv run python -m src.main gerar-material --tema "<tema>" --saidas todas [--json]
+
+# Pautas (fila FILO capada em 10)
+uv run python -m src.main gerar-pautas                         # a partir dos RSS
+uv run python -m src.main adicionar-pauta "<manchete>" [--angulo "..."] [--fonte URL]
+uv run python -m src.main listar-pautas [--json]
 
 # Grafo de conhecimento (F2a)
 uv run python -m src.main investigar             # estrutura o vault + mantem a fila
 uv run python -m src.main pesquisar --limite N   # consome a fila (0 = esvazia)
 uv run python -m src.main pesquisar --revisitar [--dias 4] [--top 10] [--aleatorio 3]
-uv run python -m src.main enfileirar "<alvo>" [--motivo "..."] [--prioridade 3]
-uv run python -m src.main pautas                 # pautas a partir das manchetes atuais dos RSS
+uv run python -m src.main enfileirar "<alvo>" [--motivo "..."] [--prioridade 3] [--tipo pessoa|organizacao|tema]
+uv run python -m src.main listar-pesquisas [--status pendente|concluido|...] [--json]
 
 # Limpeza da fila de pesquisa (dry-run por padrao): itens ja pesquisados/duplicados
 uv run python -m src.main fila-limpar [--aplicar]
@@ -71,17 +76,19 @@ uv run python -m src.main pesquisar --horas 6 --lote 10 --pautas-cada 0   # sem 
 .\scripts\loop-noite.ps1 -Horas 6               # wrapper: powercfg + aquece + daemon
 
 # Entregaveis extras + fila de postagem (F3, export-only)
-uv run python -m src.main run --tema "<tema>" --saidas todas
+uv run python -m src.main gerar-material --tema "<tema>" --saidas todas
 uv run python -m src.main agenda [--status rascunho]   # lista a fila de postagem
 uv run python -m src.main aprovar <id>                 # rascunho -> aprovado
 uv run python -m src.main publicar <id>                # aprovado -> publicado
 ```
 
-Saída do `run`: markdown timestampado em `data/output/runs/` (gitignored).
+Saída do `gerar-material`: markdown timestampado em `data/output/runs/` (gitignored).
 Estrutura de `data/output/`: `runs/`, `pautas/` (histórico .md), `investigacoes/`, `pesquisas/`,
 `entregaveis/`, `postagens/` e os `loop-*.log` (tudo sob `OUTPUT_DIR`).
-Estado (filas JSON): `data/estado/` — `pesquisa.json`, `pautas.json`, `postagem.json` (+
-`material.json` na Fase 4).
+Estado (filas JSON): `data/estado/` — `pesquisa.json`, `pautas.json`, `postagem.json` e
+`material.json` (índice do que foi gerado: tema, `pauta_id`, `run_path`, `entregaveis`).
+Aliases mantidos: `run` = `gerar-material`; `pautas` = `gerar-pautas`. As listagens aceitam
+`--json` (para a futura UI).
 Vault (grafo): `data/vault/` (gitignored) — abra como vault no Obsidian.
 
 Checagem rápida do provider / VRAM:
@@ -103,10 +110,10 @@ src/
   crew_pesquisador.py  # pesquisa um alvo e persiste fato/entidade no vault (consome a fila)
   crew_investigador.py # estrutura o vault e mantem a fila (NAO pesquisa na web)
   profiles.py       # carrega profiles.yaml (dores/individualidade/valores/...) e injeta nos agentes de escrita
-  main.py           # CLI: run / investigar / pesquisar / agenda / aprovar / publicar
+  main.py           # CLI: gerar-material, gerar-pautas, adicionar-pauta, listar-pautas, listar-pesquisas, pesquisar, investigar, agenda/aprovar/publicar
   output/render.py  # save_output(text, output_dir, tema, subdir) -> data/output/<subdir>/
   output/postagem.py # schema Peca/Pacote (pydantic), fila de postagem (JSON) e .txt por plataforma
-  output/entregaveis.py # schemas RoteiroVideo/PacoteRedes/Reportagem/PacotePautas (+Marco) + gravacao em data/output/entregaveis|pautas
+  output/entregaveis.py # schemas (RoteiroVideo/PacoteRedes/Reportagem/PacotePautas/Marco) + entregaveis em data/output + filas em data/estado (pautas/material)
   vault/
     vault.py        # ler/escrever notas c/ frontmatter (PyYAML), id/slug, escrita atômica
     log.py          # append no log/<data>.md
@@ -291,7 +298,7 @@ esta presente, ela e gerada **antes** de video/redes e entra no contexto deles.
   `PacoteRedesMulti`; os posts viram peças na fila de postagem (com o perfil na `nota`) e o
   pacote (com a imagem) vai para `data/output/entregaveis/`.
 
-As 5 manchetes do `run` sao **uma por perfil demografico** (o roteirista recebe `profiles.yaml`
+As 5 manchetes do `gerar-material` sao **uma por perfil demografico** (o roteirista recebe `profiles.yaml`
 e o revisor garante a cobertura dos 5 perfis). O bloco de perfis (com **`individualidade`**) e
 injetado tambem no Redator Jornalista, no Roteirista de Video e no Copywriter de Redes — assim o
 texto mira as dores e a individualidade de **uma pessoa real de cada perfil**, sem citar o perfil.

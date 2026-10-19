@@ -1,4 +1,5 @@
 import argparse
+import json
 import sys
 import time
 from datetime import datetime, timedelta
@@ -24,14 +25,14 @@ from .vault.render import atualizar_entidades
 from .vault.vault import ensure_vault
 
 
-def run(tema: str, saidas: str = "") -> int:
+def run(tema: str, saidas: str = "", pauta_id: str = "", json_out: bool = False) -> int:
     settings = get_settings()
     tokens = [s.strip().lower() for s in saidas.split(",") if s.strip()]
     if any(t in ("todas", "tudo", "all") for t in tokens):
         tokens = ["video", "redes", "reportagem"]
     tokens = [t for t in tokens if t in ("video", "redes", "reportagem")]
 
-    print(f"[{_ts()}] run: tema={tema!r} saidas={tokens or 'nenhuma'}", flush=True)
+    print(f"[{_ts()}] gerar-material: tema={tema!r} saidas={tokens or 'nenhuma'}", flush=True)
     crew = build_crew(settings, tokens or None, step_callback=_step_cb)
     result = crew.kickoff(inputs={"tema": tema})
     print(f"[{_ts()}] kickoff concluido; processando saidas", flush=True)
@@ -42,6 +43,7 @@ def run(tema: str, saidas: str = "") -> int:
     print(texto_final)
     path = save_output(texto_final, settings.output_dir, tema, "runs")
     print(f"\nSaída salva em: {path}")
+    entregaveis_paths: list[str] = []
 
     idx = 4
     if "reportagem" in tokens:
@@ -49,13 +51,17 @@ def run(tema: str, saidas: str = "") -> int:
         if idx < len(outs):
             rep = getattr(outs[idx], "pydantic", None)
             if rep is not None:
-                print(f"Reportagem salva em: {entregaveis.salvar_reportagem(rep, tema)}")
+                p = entregaveis.salvar_reportagem(rep, tema)
+                entregaveis_paths.append(str(p))
+                print(f"Reportagem salva em: {p}")
         idx += 1
     if "video" in tokens and idx < len(outs):
         pacote = getattr(outs[idx], "pydantic", None)
         if pacote is not None:
             for rv in pacote.videos:
-                print(f"Roteiro de vídeo [{rv.perfil_alvo}] em: {entregaveis.salvar_roteiro_video(rv, tema)}")
+                p = entregaveis.salvar_roteiro_video(rv, tema)
+                entregaveis_paths.append(str(p))
+                print(f"Roteiro de vídeo [{rv.perfil_alvo}] em: {p}")
         idx += 1
     if "redes" in tokens and idx < len(outs):
         multi = getattr(outs[idx], "pydantic", None)
@@ -84,10 +90,18 @@ def run(tema: str, saidas: str = "") -> int:
                     f"[{item.perfil_alvo}] {len(ids)} posts enfileirados | imagem: "
                     f"'{item.imagem.titulo}' / '{item.imagem.subtitulo}'"
                 )
-                print(f"  pacote de redes: {entregaveis.salvar_pacote_redes(item, tema)}")
+                p = entregaveis.salvar_pacote_redes(item, tema)
+                entregaveis_paths.append(str(p))
+                print(f"  pacote de redes: {p}")
         idx += 1
 
     _render_entidades()
+    registro = entregaveis.registrar_material(
+        tema, str(path), pauta_id, entregaveis_paths
+    )
+    print(f"Material registrado: {registro['id']}")
+    if json_out:
+        print(json.dumps(registro, ensure_ascii=False))
     return 0
 
 
@@ -117,13 +131,20 @@ def render_entidades() -> int:
     return 0
 
 
-def enfileirar(alvo: str, motivo: str = "", prioridade: int = 3) -> int:
+def enfileirar(alvo: str, motivo: str = "", prioridade: int = 3, tipo: str = "") -> int:
     ensure_vault()
     note_id = fila.add_item(alvo, motivo, prioridade, 0, "cli", forcar=True)
     if note_id:
-        print(f"Enfileirado: {alvo} ({note_id})")
+        if tipo:
+            itens = fila.carregar_itens()
+            for item in itens:
+                if item.get("id") == note_id:
+                    item["tipo_alvo"] = tipo
+                    break
+            fila.salvar_itens(itens)
+        print(f"Enfileirado: {alvo} ({note_id})" + (f" [{tipo}]" if tipo else ""))
         return 0
-    print(f"Ignorado (ja existe na fila): {alvo}")
+    print(f"Ignorado (alvo invalido): {alvo}")
     return 0
 
 
@@ -381,10 +402,13 @@ def _enfileirar_pautas(pacote, fila) -> int:
     return total
 
 
-def _listar_pautas() -> int:
+def _listar_pautas(json_out: bool = False) -> int:
     itens = entregaveis.carregar_pautas(max_itens=0)
+    if json_out:
+        print(json.dumps({"itens": itens}, ensure_ascii=False))
+        return 0
     if not itens:
-        print("Fila de pautas vazia. Rode 'pautas' antes.")
+        print("Fila de pautas vazia. Rode 'gerar-pautas' ou 'adicionar-pauta'.")
         return 0
     print(f"Fila de pautas ({len(itens)}; mais recente primeiro):")
     for i, p in enumerate(itens, 1):
@@ -393,6 +417,42 @@ def _listar_pautas() -> int:
             print(f"      angulo: {p['angulo']}")
         if p.get("source_url"):
             print(f"      fonte:  {p['source_url']}")
+    return 0
+
+
+def adicionar_pauta(manchete: str, angulo: str = "", fonte: str = "") -> int:
+    manchete = (manchete or "").strip()
+    if not manchete:
+        print("Informe a manchete/tema da pauta.")
+        return 1
+    pacote = entregaveis.PacotePautas(
+        itens=[entregaveis.Pauta(manchete=manchete, angulo=angulo, source_url=fonte)]
+    )
+    n = entregaveis.acrescentar_pautas(pacote)
+    if n:
+        total = len(entregaveis.carregar_pautas(max_itens=0))
+        print(f"Pauta adicionada ({n}). Fila: {total} pauta(s).")
+    else:
+        print("Pauta ignorada (manchete vazia ou ja existe na fila).")
+    return 0
+
+
+def listar_pesquisas_cmd(status: str = "", json_out: bool = False) -> int:
+    itens = fila.list_items(status or None)
+    if json_out:
+        print(json.dumps({"itens": itens}, ensure_ascii=False))
+        return 0
+    if not itens:
+        print("Fila de pesquisa vazia.")
+        return 0
+    print(f"Fila de pesquisa ({len(itens)} item(ns)):")
+    for i in itens:
+        print(
+            f"- [{i.get('status')}] p{i.get('prioridade')} d{i.get('profundidade')} "
+            f"{i.get('alvo')} ({i.get('id')})"
+        )
+        if i.get("desde"):
+            print(f"    desde: {i['desde']}")
     return 0
 
 
@@ -431,8 +491,11 @@ def pautas() -> int:
     return 0
 
 
-def agenda(status: str = "") -> int:
+def agenda(status: str = "", json_out: bool = False) -> int:
     pecas = postagem.list_pecas(status or None)
+    if json_out:
+        print(json.dumps({"itens": pecas}, ensure_ascii=False))
+        return 0
     if not pecas:
         print("Fila de postagem vazia.")
         return 0
@@ -588,22 +651,43 @@ def main() -> int:
     parser = argparse.ArgumentParser(prog="material-politico")
     sub = parser.add_subparsers(dest="comando", required=True)
 
-    p_run = sub.add_parser("run", help="Executa o pipeline de conteudo")
-    p_run.add_argument("--tema", default="", help="Tema da pesquisa")
-    p_run.add_argument(
-        "--pautas",
-        default="",
-        help="Selecao de pautas: listar | N | A-B | ultimas-K | todas (1 = mais recente)",
+    def _material_args(p) -> None:
+        p.add_argument("--tema", default="", help="Tema da pesquisa (fura a fila de pautas)")
+        p.add_argument(
+            "--pautas",
+            default="",
+            help="Selecao de pautas: listar | N | A-B | ultimas-K | todas (1 = mais recente)",
+        )
+        p.add_argument(
+            "--saidas",
+            default="",
+            help="Gera entregaveis extras: video, redes, reportagem (ou todas)",
+        )
+        p.add_argument("--json", action="store_true", help="Imprime o registro do material em JSON")
+
+    _material_args(
+        sub.add_parser("gerar-material", help="Gera material (manchetes + entregaveis)")
     )
-    p_run.add_argument(
-        "--saidas",
-        default="",
-        help="Gera entregaveis extras: video, redes, reportagem (ou todas)",
-    )
+    _material_args(sub.add_parser("run", help="(alias) Gera material"))
 
     sub.add_parser("investigar", help="Estrutura o vault e mantem a fila de pesquisa")
 
-    sub.add_parser("pautas", help="Gera pautas a partir das manchetes atuais dos RSS")
+    sub.add_parser("gerar-pautas", help="Gera pautas a partir das manchetes atuais dos RSS")
+    sub.add_parser("pautas", help="(alias) Gera pautas a partir dos RSS")
+
+    p_add = sub.add_parser("adicionar-pauta", help="Adiciona uma pauta manual a fila FILO")
+    p_add.add_argument("manchete", help="Manchete/tema da pauta")
+    p_add.add_argument("--angulo", default="", help="Angulo/contradicao a explorar")
+    p_add.add_argument("--fonte", default="", help="URL da fonte")
+
+    p_lp = sub.add_parser("listar-pautas", help="Lista a fila de pautas")
+    p_lp.add_argument("--json", action="store_true", help="Saida JSON")
+
+    p_lq = sub.add_parser("listar-pesquisas", help="Lista a fila de pesquisa")
+    p_lq.add_argument(
+        "--status", default="", help="pendente | em_andamento | concluido | ignorado"
+    )
+    p_lq.add_argument("--json", action="store_true", help="Saida JSON")
 
     p_pesq = sub.add_parser("pesquisar", help="Consome a fila de pesquisa")
     p_pesq.add_argument("--limite", type=int, default=0, help="Itens a processar (0 = esvaziar)")
@@ -628,9 +712,11 @@ def main() -> int:
     p_enq.add_argument("alvo", help="Pessoa, instituicao ou tema")
     p_enq.add_argument("--motivo", default="", help="Por que pesquisar")
     p_enq.add_argument("--prioridade", type=int, default=3, help="1 a 5")
+    p_enq.add_argument("--tipo", default="", help="pessoa | organizacao | tema")
 
     p_ag = sub.add_parser("agenda", help="Lista a fila de postagem")
     p_ag.add_argument("--status", default="", help="rascunho | aprovado | publicado")
+    p_ag.add_argument("--json", action="store_true", help="Saida JSON")
 
     p_ap = sub.add_parser("aprovar", help="Marca peca como aprovada")
     p_ap.add_argument("id", help="Id da peca")
@@ -666,23 +752,28 @@ def main() -> int:
     p_mf.add_argument("--aplicar", action="store_true", help="Aplica a migracao")
 
     args = parser.parse_args()
-    if args.comando == "run":
+    if args.comando in ("run", "gerar-material"):
         spec = (args.pautas or "").strip()
         if spec:
             if spec.lower() in ("listar", "list", "ls"):
-                return _listar_pautas()
+                return _listar_pautas(args.json)
             selecionadas = _selecionar_pautas(spec)
             if not selecionadas:
-                print(f"Nenhuma pauta para '{spec}'. Use 'run --pautas listar'.")
+                print(f"Nenhuma pauta para '{spec}'. Use 'listar-pautas' ou '--pautas listar'.")
                 return 1
             saidas = args.saidas or "todas"
-            print(f"run --pautas {spec}: {len(selecionadas)} pauta(s); saidas={saidas}")
+            print(f"gerar-material --pautas {spec}: {len(selecionadas)} pauta(s); saidas={saidas}")
             rc = 0
             for i, pauta in enumerate(selecionadas, 1):
                 tema = f"{pauta.get('manchete', '')} — {pauta.get('angulo', '')}".strip(" —")
                 print(f"\n=== [{i}/{len(selecionadas)}] pauta {pauta.get('id', '')}: {tema!r} ===")
                 try:
-                    code = run(tema, saidas)
+                    code = run(
+                        tema,
+                        saidas,
+                        pauta_id=pauta.get("id", ""),
+                        json_out=args.json,
+                    )
                 except Exception as exc:  # noqa: BLE001
                     print(f"!!! erro na pauta {pauta.get('id', '')}: {exc}")
                     code = 1
@@ -697,11 +788,17 @@ def main() -> int:
         if not tema.strip():
             print('Informe --tema "..." ou --pautas <selecao>.')
             return 1
-        return run(tema, args.saidas)
+        return run(tema, args.saidas, json_out=args.json)
     if args.comando == "investigar":
         return investigar()
-    if args.comando == "pautas":
+    if args.comando in ("pautas", "gerar-pautas"):
         return pautas()
+    if args.comando == "adicionar-pauta":
+        return adicionar_pauta(args.manchete, args.angulo, args.fonte)
+    if args.comando == "listar-pautas":
+        return _listar_pautas(args.json)
+    if args.comando == "listar-pesquisas":
+        return listar_pesquisas_cmd(args.status, args.json)
     if args.comando == "pesquisar":
         return pesquisar(
             args.limite,
@@ -714,9 +811,9 @@ def main() -> int:
             args.aleatorio,
         )
     if args.comando == "enfileirar":
-        return enfileirar(args.alvo, args.motivo, args.prioridade)
+        return enfileirar(args.alvo, args.motivo, args.prioridade, args.tipo)
     if args.comando == "agenda":
-        return agenda(args.status)
+        return agenda(args.status, args.json)
     if args.comando == "aprovar":
         return marcar_status(args.id, "aprovado")
     if args.comando == "publicar":
