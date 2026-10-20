@@ -67,6 +67,8 @@ uv run python -m src.main render-entidades
 
 # Dedupe de entidades (auto-merge conservador na escrita; limpeza do historico e manual)
 uv run python -m src.main deduplicar [--aplicar]   # dry-run lista clusters
+uv run python -m src.main deduplicar-fatos [--aplicar] [--limiar 0.85]  # funde fatos similares
+uv run python -m src.main limpar-orfaos [--aplicar]  # remove notas de fila antigas, JSONs obsoletos, pids e logs de console
 uv run python -m src.main fundir <id_a> <id_b>      # funde b -> a (reescreve links)
 
 # Loop autonomo (roda investigar<->pesquisar por N horas, saida ao vivo)
@@ -233,7 +235,10 @@ Sem RAG: o vault é a fonte única da verdade e os agentes leem/escrevem via too
   tokens, cache em memória por processo). Se a similaridade >= `DEDUPE_FATOS_LIMIAR` (0.85), **não
   cria nota nova**: funde no fato existente, acumulando `fontes`/`source_urls` e entidades (o
   `fonte`/`source_url` primários são mantidos por compatibilidade). Fatos distintos continuam
-  acumulando normalmente.
+  acumulando normalmente. No **batch** (`deduplicar-fatos`), o agrupamento é em **estrela** (cada
+  membro precisa ser similar ao canônico, sem encadeamento) com **guarda de entidades** (evita
+  fundir fatos de sujeitos diferentes); ele mescla fontes/entidades, reescreve os wikilinks e
+  remove as notas redundantes.
 - **Analista** usa `buscar_notas`/`consultar_grafo` para contextualizar a nota de impacto.
 - **Revisor** valida contra as notas (`ler_nota`/`buscar_notas`); a tabela de validação
   cita a **referência** (id da nota e/ou `source_url`), sem trecho literal.

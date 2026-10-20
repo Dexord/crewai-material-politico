@@ -614,6 +614,91 @@ def deduplicar_cmd(aplicar: bool = False) -> int:
     return 0
 
 
+def deduplicar_fatos_cmd(limiar: float = 0.85, aplicar: bool = False) -> int:
+    from .vault.fatos import deduplicar_fatos
+
+    res = deduplicar_fatos(limiar=limiar, aplicar=aplicar)
+    clusters = res["clusters"]
+    print(
+        f"Clusters de fatos similares: {len(clusters)} "
+        f"(fatos redundantes: {res['pares']}; limiar {limiar:.2f})"
+    )
+    for c in clusters[:40]:
+        print(f"\n[grupo {c['tamanho']}] canonico: {c['canonico']}")
+        for m in c["membros"]:
+            print(f"    - {m}")
+    if len(clusters) > 40:
+        print(f"... (+{len(clusters) - 40} grupos)")
+    if aplicar:
+        print(
+            f"\nMesclados: {res['mesclados']} | removidos: {res['removidos']} | "
+            f"links reescritos em {res['links_reescritos']} nota(s)"
+        )
+        _render_entidades()
+    else:
+        print("\n(dry-run) Nada alterado. Use --aplicar.")
+    return 0
+
+
+def limpar_orfaos(aplicar: bool = False) -> int:
+    from collections import Counter
+
+    settings = get_settings()
+    vault = Path(settings.vault_dir)
+    out = Path(settings.output_dir)
+    estado = Path(settings.estado_dir)
+
+    itens: list[tuple[str, Path]] = []
+
+    fila_dir = vault / "fila"
+    if (estado / "pesquisa.json").exists():
+        if fila_dir.exists():
+            itens += [
+                ("vault/fila (notas antigas)", p) for p in sorted(fila_dir.glob("*.md"))
+            ]
+    else:
+        print("! data/estado/pesquisa.json nao existe; mantendo as notas de fila.")
+
+    obsoletos = [
+        (out / "pautas" / "pautas.json", estado / "pautas.json", "output/pautas.json obsoleto"),
+        (out / "fila-postagem.json", estado / "postagem.json", "output/fila-postagem.json obsoleto"),
+    ]
+    for antigo, novo, label in obsoletos:
+        if antigo.exists() and novo.exists():
+            itens.append((label, antigo))
+
+    itens += [("pid", p) for p in sorted(out.glob("*.pid"))]
+    for padrao in ("run*.out.log", "run*.err.log", "pautas*.out.log", "pautas*.err.log"):
+        itens += [("log-console antigo", p) for p in sorted(out.glob(padrao))]
+
+    if not itens:
+        print("Nenhum orfao encontrado.")
+        return 0
+
+    tamanho = sum(p.stat().st_size for _, p in itens)
+    print(f"Orfaos: {len(itens)} arquivo(s) (~{tamanho / 1024 / 1024:.1f} MB)")
+    for label, n in Counter(label for label, _ in itens).most_common():
+        print(f"  {n:>4}  {label}")
+    for label, p in itens[:20]:
+        print(f"    - [{label}] {p}")
+    if len(itens) > 20:
+        print(f"    ... (+{len(itens) - 20})")
+
+    if not aplicar:
+        print("\n(dry-run) Nada alterado. Use --aplicar.")
+        return 0
+
+    removidos = 0
+    for _, p in itens:
+        try:
+            p.unlink()
+            removidos += 1
+        except OSError as exc:
+            print(f"  ERRO {p}: {exc}")
+    print(f"\nRemovidos: {removidos} arquivo(s).")
+    return 0
+
+
 def fundir_cmd(id_a: str, id_b: str) -> int:
     print(fundir(id_a, id_b))
     return 0
@@ -737,6 +822,22 @@ def main() -> int:
     p_ded = sub.add_parser("deduplicar", help="Encontra/funde entidades duplicadas")
     p_ded.add_argument("--aplicar", action="store_true", help="Funde os clusters de alta confianca")
 
+    p_dfat = sub.add_parser(
+        "deduplicar-fatos", help="Funde fatos muito similares (dry-run por padrao)"
+    )
+    p_dfat.add_argument("--aplicar", action="store_true", help="Aplica a fusao")
+    p_dfat.add_argument(
+        "--limiar",
+        type=float,
+        default=None,
+        help="Similaridade minima (default: DEDUPE_FATOS_LIMIAR)",
+    )
+
+    p_lorf = sub.add_parser(
+        "limpar-orfaos", help="Remove orfaos do vault/output (dry-run por padrao)"
+    )
+    p_lorf.add_argument("--aplicar", action="store_true", help="Remove de fato")
+
     p_fund = sub.add_parser("fundir", help="Funde duas entidades (b -> a), reescrevendo links")
     p_fund.add_argument("a", help="Id canonico (destino)")
     p_fund.add_argument("b", help="Id a fundir (origem)")
@@ -824,6 +925,13 @@ def main() -> int:
         return render_entidades()
     if args.comando == "deduplicar":
         return deduplicar_cmd(args.aplicar)
+    if args.comando == "deduplicar-fatos":
+        limiar = (
+            args.limiar if args.limiar is not None else get_settings().dedupe_fatos_limiar
+        )
+        return deduplicar_fatos_cmd(limiar, args.aplicar)
+    if args.comando == "limpar-orfaos":
+        return limpar_orfaos(args.aplicar)
     if args.comando == "fundir":
         return fundir_cmd(args.a, args.b)
     if args.comando == "fila-limpar":
