@@ -257,6 +257,12 @@ def salvar_roteiro_video(rv: RoteiroVideo, tema: str) -> Path:
     return path
 
 
+def _limpar_corpo(texto: str) -> str:
+    texto = re.sub(r"(?m)^\|\s*(#{1,6}\s)", r"\1", texto or "")
+    texto = re.sub(r"(?m)^(#{1,6}\s[^\n]*?)\s*\|\s*$", r"\1", texto)
+    return texto
+
+
 def salvar_reportagem(rep: Reportagem, tema: str) -> Path:
     linhas = [
         f"# {rep.titulo}",
@@ -265,7 +271,7 @@ def salvar_reportagem(rep: Reportagem, tema: str) -> Path:
         "",
         rep.lead,
         "",
-        rep.corpo,
+        _limpar_corpo(rep.corpo),
     ]
     if rep.cronologia:
         linhas += ["", "## Cronologia"]
@@ -296,7 +302,7 @@ def salvar_pacote_redes(pacote: PacoteRedes, tema: str) -> Path:
         "## Facebook",
         pacote.facebook.texto,
     ]
-    if pacote.facebook.hashtags:
+    if pacote.facebook.hashtags and "#" not in pacote.facebook.texto:
         linhas.append("Hashtags: " + " ".join(pacote.facebook.hashtags))
     linhas += ["", f"## Bluesky (fio de {n} post{'s' if n != 1 else ''})"]
     for i, post in enumerate(pacote.bluesky.posts, 1):
