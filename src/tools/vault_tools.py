@@ -1,7 +1,10 @@
+import re
+import unicodedata
 from datetime import datetime
 
 from crewai.tools import tool
 
+from ..config import get_settings
 from ..vault import entidades
 from ..vault import index as graph_index
 from ..vault import queue as fila
@@ -119,11 +122,83 @@ def salvar_noticia(
     return f"Noticia salva: {note_id}"
 
 
+_STOP_FATO = frozenset(
+    {
+        "de", "da", "do", "das", "dos", "a", "o", "as", "os", "e", "em", "no", "na",
+        "nos", "nas", "que", "para", "com", "por", "um", "uma", "ao", "aos", "se",
+        "foi", "ser", "pelo", "pela", "sobre", "como", "mais", "nao", "seu", "sua",
+        "the", "of", "and",
+    }
+)
+
+
+def _tokens_fato(text: str) -> frozenset[str]:
+    s = (
+        unicodedata.normalize("NFKD", str(text))
+        .encode("ascii", "ignore")
+        .decode()
+        .lower()
+    )
+    return frozenset(
+        t for t in re.findall(r"[a-z0-9]+", s) if len(t) >= 2 and t not in _STOP_FATO
+    )
+
+
+_FATOS_CACHE: list[tuple[frozenset[str], str]] | None = None
+
+
+def _cache_fatos() -> list[tuple[frozenset[str], str]]:
+    global _FATOS_CACHE
+    if _FATOS_CACHE is None:
+        _FATOS_CACHE = [
+            (_tokens_fato(fm.get("afirmacao", "")), fm.get("id", ""))
+            for fm, _, _ in all_notes("fato")
+            if fm.get("afirmacao")
+        ]
+    return _FATOS_CACHE
+
+
+def _fato_similar(tokens: frozenset[str]) -> tuple[str, float]:
+    if not tokens:
+        return "", 0.0
+    melhor_id, melhor = "", 0.0
+    for outros, note_id in _cache_fatos():
+        if not outros:
+            continue
+        inter = len(tokens & outros)
+        if not inter:
+            continue
+        jaccard = inter / len(tokens | outros)
+        menor = min(len(tokens), len(outros))
+        contencao = inter / menor
+        score = jaccard
+        if menor >= 8 and contencao >= 0.90:
+            score = max(score, contencao)
+        if score > melhor:
+            melhor, melhor_id = score, note_id
+    return melhor_id, melhor
+
+
+def _fonte_ja_incluida(fontes: list, novo: dict) -> bool:
+    for f in fontes:
+        if not isinstance(f, dict):
+            continue
+        if novo.get("url"):
+            if f.get("url") == novo["url"]:
+                return True
+        elif not f.get("url") and f.get("fonte") == novo.get("fonte"):
+            return True
+    return False
+
+
 @tool("salvar_fato")
 def salvar_fato(
     afirmacao: str, fonte: str, source_url: str = "", entidades: str = "", data_fato: str = ""
 ) -> str:
     """Salva um fato verificado (afirmacao + fonte) no vault.
+
+    Factos muito parecidos (similaridade >= DEDUPE_FATOS_LIMIAR) NAO criam nota nova:
+    sao fundidos no fato existente, acumulando as fontes/URLs e entidades.
 
     Args:
         afirmacao: O fato, de forma objetiva (de preferencia com a DATA dentro do texto).
@@ -133,16 +208,65 @@ def salvar_fato(
         data_fato: Data do acontecimento (AAAA-MM-DD), quando a fonte informar.
 
     Returns:
-        O id da nota de fato.
+        O id da nota de fato (ou do fato existente que recebeu a nova referencia).
     """
-    note_id = make_id("fato", afirmacao, dated=True)
     entity_ids = [_resolve_id(e) for e in _split(entidades)]
+    tokens = _tokens_fato(afirmacao)
+    similar_id, score = _fato_similar(tokens)
+    limiar = float(get_settings().dedupe_fatos_limiar)
+
+    if similar_id and score >= limiar:
+        existente = read_note(similar_id)
+        if existente:
+            fm, body = existente
+            fontes = fm.get("fontes")
+            if not isinstance(fontes, list):
+                fontes = []
+            if (fm.get("fonte") or fm.get("source_url")) and not fontes:
+                fontes.append({"fonte": fm.get("fonte", ""), "url": fm.get("source_url", "")})
+            novo = {"fonte": fonte or "", "url": source_url or ""}
+            if (novo["fonte"] or novo["url"]) and not _fonte_ja_incluida(fontes, novo):
+                fontes.append(novo)
+            fm["fontes"] = fontes
+
+            urls = fm.get("source_urls")
+            if not isinstance(urls, list):
+                urls = []
+            for url in (fm.get("source_url"), source_url):
+                if url and url not in urls:
+                    urls.append(url)
+            fm["source_urls"] = urls
+
+            atuais = list(fm.get("entidades") or [])
+            for e in entity_ids:
+                link = _link(e)
+                if link not in atuais:
+                    atuais.append(link)
+            fm["entidades"] = atuais
+
+            if not fm.get("data_fato") and str(data_fato).strip():
+                fm["data_fato"] = str(data_fato).strip()
+
+            if len(afirmacao) > len(fm.get("afirmacao") or ""):
+                fm["afirmacao"] = afirmacao
+                body = afirmacao
+
+            save_note(fm, body)
+            registrar_mencao(entity_ids, similar_id)
+            return (
+                f"Fato similar ja existente ({similar_id}, similaridade {score:.2f}); "
+                f"referencia adicionada ({len(fontes)} fonte(s))."
+            )
+
+    note_id = make_id("fato", afirmacao, dated=True)
     fm = {
         "id": note_id,
         "tipo": "fato",
         "afirmacao": afirmacao,
         "fonte": fonte,
         "source_url": source_url,
+        "fontes": ([{"fonte": fonte or "", "url": source_url or ""}] if (fonte or source_url) else []),
+        "source_urls": ([source_url] if source_url else []),
         "data": f"{datetime.now():%Y-%m-%d}",
         "entidades": [_link(e) for e in entity_ids],
         "relacionadas": [],
@@ -151,6 +275,7 @@ def salvar_fato(
         fm["data_fato"] = str(data_fato).strip()
     save_note(fm, afirmacao)
     registrar_mencao(entity_ids, note_id)
+    _cache_fatos().append((tokens, note_id))
     return f"Fato salvo: {note_id}"
 
 

@@ -229,6 +229,11 @@ Sem RAG: o vault é a fonte única da verdade e os agentes leem/escrevem via too
 
 - **Pesquisador** consulta o vault antes (`buscar_notas`/`ler_nota`/`consultar_grafo`) e
   **persiste** o que achar de novo (`salvar_fato`/`salvar_noticia`).
+- **Dedupe de fatos**: `salvar_fato` compara a afirmação com os fatos existentes (Jaccard de
+  tokens, cache em memória por processo). Se a similaridade >= `DEDUPE_FATOS_LIMIAR` (0.85), **não
+  cria nota nova**: funde no fato existente, acumulando `fontes`/`source_urls` e entidades (o
+  `fonte`/`source_url` primários são mantidos por compatibilidade). Fatos distintos continuam
+  acumulando normalmente.
 - **Analista** usa `buscar_notas`/`consultar_grafo` para contextualizar a nota de impacto.
 - **Revisor** valida contra as notas (`ler_nota`/`buscar_notas`); a tabela de validação
   cita a **referência** (id da nota e/ou `source_url`), sem trecho literal.
@@ -362,11 +367,17 @@ Copie `.env.example` → `.env`. Defaults que levantam o projeto:
 ```
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=qwen3.5:9b
+OLLAMA_MODEL_ESCRITA=gemma4:e4b
 OUTPUT_DIR=data/output
+ESTADO_DIR=data/estado
 SCRAPE_RATE_LIMIT=1.5
 VAULT_DIR=data/vault
 MAX_DEPTH=3
-BLACKLIST_ALVOS=Flavio Bolsonaro
+BLACKLIST_ALVOS=
+FRESCOR_DIAS=4
+REVISITAR_TOP=10
+REVISITAR_ALEATORIO=3
+DEDUPE_FATOS_LIMIAR=0.85
 ```
 
 ## 9. Contexto e desempenho do Ollama (importante)

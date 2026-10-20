@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     frescor_dias: int = 4
     revisitar_top: int = 10
     revisitar_aleatorio: int = 3
+    dedupe_fatos_limiar: float = 0.85
 
 
 @lru_cache
